@@ -59,6 +59,12 @@ Settled during charting (constraints for every ticket):
   needs an API key); Flyway migrates automatically at startup (Postgres must run with
   SSL); SSO issues browserless JWTs (guest endpoint + api-key exchange via a service
   user); Explore is a static bundle picking backends from `environments.conf.json`.
+- [Decide the ephemeral regression stack composition](tickets/003-decide-ephemeral-regression-stack.md) —
+  a compose file: SSL Postgres (3 empty DBs, Flyway at startup) + SSO (staging mode,
+  committed test GPG keypair) + ODB + ITC + obscalc + Hasura prefs (required — Explore
+  hangs without it) + Explore bundle fetched from Firebase dev + Caddy TLS proxy under
+  `*.gpp-test.internal`; images pulled `:latest` from Heroku's `-dev` registry with a
+  `HEROKU_API_KEY` secret, SHAs recorded per run.
 
 ## Not yet specified
 
