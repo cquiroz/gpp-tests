@@ -75,6 +75,12 @@ Settled during charting (constraints for every ticket):
   from `-dev` images, DB reset + seeded corpus per run; ramp to 200 VUs held 20 min,
   60/40 read/write with 1–5 s think time; baseline-first thresholds; claim is
   night-over-night regression, not absolute capacity; k6 on a GitHub hosted runner.
+- [Decide test-user pool provisioning and token fetch](tickets/006-decide-test-user-pool.md) —
+  no pre-created pool: every load VU is a guest (`auth-as-guest` at ramp start), zero
+  test credentials; 10-min JWTs handled by a per-VU cookie refresh loop, with a spec
+  ask to parameterize SSO's JWT lifetime; corpus is per-VU self-seeded (guests see only
+  their own programs); standard-user bootstrap deferred to phase 2 with role-diverse
+  scenarios.
 
 ## Not yet specified
 

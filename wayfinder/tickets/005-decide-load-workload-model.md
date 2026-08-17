@@ -44,3 +44,8 @@ up afterwards.
 Interaction with the test-user pool ticket: this model needs one token per VU at ramp
 start — 200 users' worth — which that ticket must satisfy (pool size ≥ VU target, or
 guest tokens if guests suffice at load).
+
+**Amended by [Decide test-user pool provisioning and token fetch](006-decide-test-user-pool.md)**:
+VUs are guests, and guests see only their own programs — so the pre-seeded corpus is
+**per-VU self-seeded** (~3–5 programs with observations per guest during ramp), not a
+central seed.
