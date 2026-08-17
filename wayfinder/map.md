@@ -41,7 +41,8 @@ Settled during charting (constraints for every ticket):
 - Auth: existing SSO with a **pool of pre-created test users**; tokens fetched
   scriptably via the SSO API (no browser needed).
 - v1 cadence: **scheduled** runs against latest main-branch images (regression subset
-  every few hours, performance set nightly). Per-PR wiring is phase 2, in the fog.
+  daily — revised from "every few hours" by the CI-topology ticket — performance set
+  nightly). Per-PR wiring is phase 2, in the fog.
 - Load tests target a Heroku-deployed environment, not the CI runner.
 - v1 scenarios: (1) login, (2) create program, (3) create observation with a target,
   (4) edit and read back an observation.
@@ -81,6 +82,19 @@ Settled during charting (constraints for every ticket):
   ask to parameterize SSO's JWT lifetime; corpus is per-VU self-seeded (guests see only
   their own programs); standard-user bootstrap deferred to phase 2 with role-diverse
   scenarios.
+- [Design the Grafana dashboards and trace correlation](tickets/007-design-grafana-integration.md) —
+  both suites emit into the existing Grafana Cloud stack (`environment` attribute
+  distinguishes test traffic; ephemeral stack traces too); run identity =
+  `testid=<suite>-<run_id>` + start/end annotations; official k6 dashboards + one
+  custom results dashboard (JSON in repo); labels capped at operation/scenario/suite/
+  status; no Grafana alerts in v1; free-tier retention → per-run summary JSON committed
+  to the repo as the durable record.
+- [Decide the CI topology on GitHub Actions](tickets/008-decide-ci-topology.md) —
+  two workflows in the (public) testing repo: `regression.yml` daily 07:00 UTC +
+  dispatch, `performance.yml` nightly 08:00 UTC (release loadtest apps → reset → k6);
+  shared boot composite action; queued concurrency groups; failure notice by email;
+  failure-only Playwright artifacts (30 d) + summary JSON on a `run-data` branch;
+  Playwright 1 retry with flaky reporting.
 
 ## Not yet specified
 
@@ -100,6 +114,8 @@ Settled during charting (constraints for every ticket):
   graphql-ws; deferred from the v1 k6 variants.
 - **Distributed k6 / dedicated load runner** — needed only beyond ~500 VUs or a
   WS-heavy mix; same scaling question as the WS item.
+- **Trend-based Grafana alerts** — multi-night degradation rules, once the CI-failure
+  notification path has earned trust.
 - **Dedicated load environment on AWS** — only if the Heroku target proves unsuitable
   for meaningful load numbers (dyno limits, shared usage).
 
