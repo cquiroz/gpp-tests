@@ -65,6 +65,16 @@ Settled during charting (constraints for every ticket):
   hangs without it) + Explore bundle fetched from Firebase dev + Caddy TLS proxy under
   `*.gpp-test.internal`; images pulled `:latest` from Heroku's `-dev` registry with a
   `HEROKU_API_KEY` secret, SHAs recorded per run.
+- [Specify the v1 scenarios](tickets/004-specify-v1-scenarios.md) — one chained guest
+  Playwright journey (login/auto-program → explicit program create → observation with
+  manual sidereal target + GMOS long-slit mode asserting ITC/obscalc results → subtitle
+  edit + reload read-back), GraphQL read-back after every step; all four get k6 variants
+  plus Explore's real read-query mix; testability ask: `data-testid`s in lucuma-apps.
+- [Decide the load-test workload model and target](tickets/005-decide-load-workload-model.md) —
+  nightly ~40-min run against a dedicated `lucuma-*-loadtest` Heroku app set released
+  from `-dev` images, DB reset + seeded corpus per run; ramp to 200 VUs held 20 min,
+  60/40 read/write with 1–5 s think time; baseline-first thresholds; claim is
+  night-over-night regression, not absolute capacity; k6 on a GitHub hosted runner.
 
 ## Not yet specified
 
@@ -75,6 +85,15 @@ Settled during charting (constraints for every ticket):
   join the scenario set later. Not yet named or prioritized.
 - **New-user signup flow** — v1 logs in existing test users; testing the signup path
   through SSO is a dim later question.
+- **Role-diverse scenarios** — running the journeys as existing standard users and
+  staff users (v1 is guest-only in the browser).
+- **External-integrations scenario** — catalog Target Search (Simbad/Horizons) as a
+  separately-reported scenario, excluded from the core four to keep them
+  deterministic.
+- **WebSocket subscriptions in the load mix** — Explore's real traffic is heavily
+  graphql-ws; deferred from the v1 k6 variants.
+- **Distributed k6 / dedicated load runner** — needed only beyond ~500 VUs or a
+  WS-heavy mix; same scaling question as the WS item.
 - **Dedicated load environment on AWS** — only if the Heroku target proves unsuitable
   for meaningful load numbers (dyno limits, shared usage).
 
