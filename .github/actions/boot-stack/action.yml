@@ -1,0 +1,55 @@
+name: Boot the ephemeral stack
+description: >
+  Boots the docker-compose regression stack from empty and verifies the GraphQL contract
+  (spec §3). Shared by the workflows so there is one definition of "a booted stack".
+
+inputs:
+  heroku-api-key:
+    description: Heroku API key with access to the lucuma -dev apps (registry pull)
+    required: true
+  otel-endpoint:
+    description: Optional OTLP endpoint, so failed-scenario traces land in Tempo (spec §7)
+    required: false
+    default: ""
+  otel-key:
+    description: Token for the OTLP endpoint
+    required: false
+    default: ""
+  domain:
+    description: Test domain the stack is served under
+    required: false
+    default: gpp-test.internal
+
+outputs:
+  images:
+    description: Path to the JSON file recording the image digests this run used
+    value: out/images.json
+
+runs:
+  using: composite
+  steps:
+    - name: Boot the stack
+      shell: bash
+      env:
+        HEROKU_API_KEY: ${{ inputs.heroku-api-key }}
+        ODB_OTEL_ENDPOINT: ${{ inputs.otel-endpoint }}
+        ODB_OTEL_KEY: ${{ inputs.otel-key }}
+        GPP_TEST_DOMAIN: ${{ inputs.domain }}
+      run: stack/scripts/bootstrap.sh
+
+    - name: Verify the GraphQL contract against the live ODB
+      shell: bash
+      env:
+        GPP_TEST_DOMAIN: ${{ inputs.domain }}
+      run: |
+        # Cheap and specific: pins "the ODB schema moved" to this step instead of letting it
+        # surface as a mysterious red journey twenty minutes later.
+        source stack/.env.generated
+        node tools/verify-operations.js
+
+    - name: Stack diagnostics on failure
+      if: failure()
+      shell: bash
+      run: |
+        docker compose --project-name odbattr --file stack/docker-compose.yml ps || true
+        docker compose --project-name odbattr --file stack/docker-compose.yml logs --tail 200 || true

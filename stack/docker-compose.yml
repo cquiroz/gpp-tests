@@ -1,0 +1,206 @@
+# The ephemeral regression stack (spec §3) — the same file locally and in CI.
+#
+# Boots from empty on every run: Postgres has three empty databases and each service runs
+# its own Flyway migration at startup, so every regression run also regression-tests the
+# migrations. Nothing here is a long-lived environment; `stack/scripts/down.sh` removes the
+# volumes with it.
+#
+# Do not run `docker compose` directly for a first boot — `stack/scripts/bootstrap.sh`
+# generates the Postgres certificate, the throwaway SSO GPG keypair and the service JWT
+# that these services need, then brings them up in the right order. Once bootstrapped,
+# `source stack/.env.generated` gives a shell everything it needs for plain compose calls.
+#
+# Service-to-service traffic stays on plain HTTP over the compose network (no CA to install
+# inside JVM containers); everything the *browser* and k6 touch goes through Caddy over TLS,
+# because staging-mode SSO issues Secure cookies.
+
+x-odb-env: &odb-env
+  DATABASE_URL: postgres://${PG_USER:-jimmy}:${PG_PASSWORD:-banana}@postgres:5432/lucuma-odb
+  ODB_SSO_ROOT: http://sso:8082
+  ODB_SSO_PUBLIC_KEY: ${GPG_SSO_PUBLIC_KEY:?run stack/scripts/bootstrap.sh}
+  # Minted by bootstrap's one-off `create-service-user odb`, so it is legitimately empty
+  # while that step runs — bootstrap refuses to start odb/itc/obscalc without it.
+  ODB_SERVICE_JWT: ${ODB_SERVICE_JWT:-}
+  ODB_ITC_ROOT: http://itc:6060/itc
+  ODB_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
+  CORS_OVER_HTTPS: "true"
+  EXPLORE_URL: https://explore.${GPP_TEST_DOMAIN:-gpp-test.internal}
+  # Dummy S3/Mailgun values: required to boot, unused by the v1 scenarios (ODB-README).
+  CLOUDCUBE_ACCESS_KEY_ID: odbattr
+  CLOUDCUBE_SECRET_ACCESS_KEY: odbattr
+  CLOUDCUBE_URL: https://cube.example.com/odbattr
+  FILE_UPLOAD_MAX_MB: "10"
+  MAILGUN_API_KEY: odbattr
+  MAILGUN_DOMAIN: mail.example.com
+  MAILGUN_WEBHOOK_SIGNING_KEY: odbattr
+  INVITATION_SENDER_EMAIL: odbattr@example.com
+  PROPOSAL_EMAIL_DEFAULT: odbattr@example.com
+  # `local` keeps OpenTelemetry off; bootstrap flips this to `dev` when ODB_OTEL_* are set,
+  # because a non-local environment makes both OTel variables mandatory (spec §7).
+  ODB_ENVIRONMENT: ${ODB_ENVIRONMENT:-local}
+  ODB_OTEL_ENDPOINT: ${ODB_OTEL_ENDPOINT:-}
+  ODB_OTEL_KEY: ${ODB_OTEL_KEY:-}
+  OTEL_RESOURCE_ATTRIBUTES: environment=${OTEL_ENVIRONMENT:-ephemeral},service.namespace=odbattr
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${PG_USER:-jimmy}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-banana}
+      POSTGRES_DB: lucuma-odb
+    # Flyway connects with sslmode=require, so SSL is not optional. The certificate is
+    # generated per run and installed here with the ownership and mode Postgres demands —
+    # done in the container so the host's file ownership (and platform) does not matter.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        install -o postgres -g postgres -m 600 /certs/server.key /var/lib/postgresql/server.key
+        install -o postgres -g postgres -m 644 /certs/server.crt /var/lib/postgresql/server.crt
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/server.key \
+          -c max_connections=${PG_MAX_CONNECTIONS:-200}
+    volumes:
+      - ./certs:/certs:ro
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-jimmy} -d lucuma-odb"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    expose:
+      - "5432"
+
+  sso:
+    image: ${SSO_IMAGE:-registry.heroku.com/lucuma-sso-dev/web:latest}
+    # The image entrypoint is the service launcher and `serve` is its subcommand — the same
+    # binary also provides `create-service-user`, which bootstrap runs one-off. Overridable in
+    # case the deployed process type is invoked differently.
+    command: ["${SSO_COMMAND:-serve}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8082"
+      DATABASE_URL: postgres://${PG_USER:-jimmy}:${PG_PASSWORD:-banana}@postgres:5432/lucuma-sso
+      # Staging mode, not local: local mode mints a random keypair per boot that ODB cannot
+      # verify. The keypair below is generated per run by bootstrap.sh and protects nothing.
+      LUCUMA_SSO_ENVIRONMENT: staging
+      GPG_SSO_PUBLIC_KEY: ${GPG_SSO_PUBLIC_KEY:?run stack/scripts/bootstrap.sh}
+      GPG_SSO_PRIVATE_KEY: ${GPG_SSO_PRIVATE_KEY:?run stack/scripts/bootstrap.sh}
+      GPG_SSO_PASSPHRASE: ${GPG_SSO_PASSPHRASE:?run stack/scripts/bootstrap.sh}
+      LUCUMA_SSO_COOKIE_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
+      LUCUMA_SSO_HOSTNAME: sso.${GPP_TEST_DOMAIN:-gpp-test.internal}
+      LUCUMA_ODB_HOSTNAME: odb.${GPP_TEST_DOMAIN:-gpp-test.internal}
+      # ORCID credentials are required to boot in every environment but are only exercised
+      # by the interactive standard-user login, which v1 never uses (spec §4).
+      LUCUMA_ORCID_CLIENT_ID: odbattr-not-a-real-client
+      LUCUMA_ORCID_CLIENT_SECRET: odbattr-not-a-real-secret
+    expose:
+      - "8082"
+
+  itc:
+    image: ${ITC_IMAGE:-registry.heroku.com/itc-dev/web:latest}
+    depends_on:
+      - sso
+    environment:
+      PORT: "6060"
+      ITC_PORT: "6060"
+      ODB_BASE_URL: http://odb:8082
+      ODB_SERVICE_JWT: ${ODB_SERVICE_JWT:-}
+      # Redis is only mandatory on Heroku dynos; off-Heroku it is an optional cache.
+    expose:
+      - "6060"
+
+  odb:
+    image: ${ODB_IMAGE:-registry.heroku.com/lucuma-postgres-odb-dev/web:latest}
+    command: ["${ODB_COMMAND:-serve}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sso:
+        condition: service_started
+      itc:
+        condition: service_started
+    environment:
+      <<: *odb-env
+      PORT: "8082"
+    expose:
+      - "8082"
+
+  # Background calculations (execution digests, workflow state). Without it the journey's
+  # "calculated results appear" assertion — the ITC/obscalc liveness check — never passes.
+  obscalc:
+    image: ${OBSCALC_IMAGE:-registry.heroku.com/lucuma-postgres-odb-dev/obscalc:latest}
+    depends_on:
+      odb:
+        condition: service_started
+    environment:
+      <<: *odb-env
+      PORT: "8083"
+
+  # Explore's preferences DB: stock Hasura over the `prefs` database. Required, not
+  # optional — Explore hangs forever after login if this websocket cannot connect.
+  # The cli-migrations image applies lucuma-apps' own migrations and metadata at startup.
+  hasura:
+    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.44.0.cli-migrations-v3}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://${PG_USER:-jimmy}:${PG_PASSWORD:-banana}@postgres:5432/prefs
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://${PG_USER:-jimmy}:${PG_PASSWORD:-banana}@postgres:5432/prefs
+      HASURA_GRAPHQL_EXPERIMENTAL_FEATURES: naming_convention
+      HASURA_GRAPHQL_DEFAULT_NAMING_CONVENTION: graphql-default
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      # Unauthenticated on purpose: Explore connects to prefs with an empty init payload.
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: admin
+      HASURA_GRAPHQL_MIGRATIONS_DATABASE_NAME: default
+    volumes:
+      - ${LUCUMA_APPS_DIR:-./.cache/lucuma-apps}/explore/hasura/user-prefs/migrations:/hasura-migrations:ro
+      - ${LUCUMA_APPS_DIR:-./.cache/lucuma-apps}/explore/hasura/user-prefs/metadata:/hasura-metadata:ro
+    expose:
+      - "8080"
+
+  # TLS front door. Everything the browser and k6 see is https under one registrable
+  # domain, which is what staging-mode SSO's Secure/SameSite=Strict cookie requires.
+  # Explore itself is proxied from Firebase dev hosting (tracks lucuma-apps main), with our
+  # own environments.conf.json served in front of it.
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    depends_on:
+      - odb
+      - sso
+      - itc
+      - hasura
+    environment:
+      GPP_TEST_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
+      EXPLORE_ORIGIN: ${EXPLORE_ORIGIN:-explore-gemini-dev.web.app}
+    ports:
+      - "${CADDY_HTTPS_PORT:-443}:443"
+      - "${CADDY_HTTP_PORT:-80}:80"
+    volumes:
+      - ${CADDYFILE:-./caddy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ./.cache/explore:/srv/explore:ro
+      # Only read by Caddyfile.bundle; harmless (and empty) in the default proxy mode.
+      - ${EXPLORE_BUNDLE_DIR:-./.cache/explore}:/srv/explore-bundle:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        aliases:
+          - explore.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          - sso.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          - odb.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          - itc.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          - prefs.${GPP_TEST_DOMAIN:-gpp-test.internal}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

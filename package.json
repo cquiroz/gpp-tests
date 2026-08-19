@@ -1,0 +1,33 @@
+{
+  "name": "odbattr",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated cross-system testing for the GPP (lucuma) ecosystem — see gpp-testing-system-spec.md",
+  "license": "BSD-3-Clause",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run test",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "stack:up": "stack/scripts/bootstrap.sh",
+    "stack:down": "stack/scripts/down.sh",
+    "verify:operations": "node tools/verify-operations.js",
+    "thresholds": "node tools/compute-thresholds.js",
+    "summary": "node tools/write-run-summary.js",
+    "k6:regression": "k6 run --summary-export out/k6-summary.json k6/regression.js",
+    "k6:load": "k6 run --summary-export out/k6-summary.json k6/load.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.10.0",
+    "graphql": "^16.14.2",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,51 @@
+# Alternative front door that serves a locally-built Explore bundle instead of proxying
+# Firebase dev hosting. Use it once lucuma-apps publishes the bundle as a CI artifact
+# (spec §10 ask 3), or to test a specific Explore commit:
+#
+#   EXPLORE_BUNDLE_DIR=/path/to/explore/heroku/static \
+#   CADDYFILE=./caddy/Caddyfile.bundle stack/scripts/bootstrap.sh
+#
+# The bundle directory is mounted at /srv/explore-bundle, and our environments.conf.json
+# still wins over the one inside the bundle.
+
+{
+	admin off
+	auto_https disable_redirects
+}
+
+explore.{$GPP_TEST_DOMAIN} {
+	tls internal
+
+	handle /environments.conf.json {
+		root * /srv/explore
+		header Cache-Control "no-store"
+		header Content-Type "application/json"
+		file_server
+	}
+
+	handle {
+		root * /srv/explore-bundle
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+sso.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://sso:8082
+}
+
+odb.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://odb:8082
+}
+
+itc.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://itc:6060
+}
+
+prefs.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://hasura:8080
+}

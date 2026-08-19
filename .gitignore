@@ -1,0 +1,20 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Generated at bootstrap: Postgres server cert/key and the throwaway SSO GPG keypair.
+stack/certs/
+stack/keys/
+# Sparse checkout of lucuma-apps (Hasura prefs migrations) and other run scratch.
+stack/.cache/
+# stack/.env.generated holds the throwaway SSO private key, its passphrase and the service
+# JWT — the glob must cover the suffix, not just `stack/.env`.
+stack/.env*
+# The run-data ledger is checked out here by CI; it lives on its own branch.
+.run-data/
+
+# k6 raw output and per-run summaries produced locally.
+out/
+*.log

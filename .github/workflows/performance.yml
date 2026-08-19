@@ -1,0 +1,213 @@
+# Nightly load run against the dedicated load target (spec §6, §8).
+#
+# The claim is night-over-night regression, not absolute capacity: the profile is fixed, the
+# database is reset before every run, and thresholds come from the run-data ledger — the first
+# three nights are baseline-only.
+name: performance
+
+on:
+  schedule:
+    # 08:00 UTC, after the regression run, so both finish before the day starts.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      arm-thresholds:
+        description: Arm calibrated thresholds (off = baseline-only run)
+        type: boolean
+        default: true
+
+# Queued, never cancelled: the load target's database must not be reset mid-run.
+concurrency:
+  group: loadtest-environment
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUITE: load
+      # The load target has real DNS and real certificates (spec §3's documented approach for
+      # the persistent environment), so endpoints are given explicitly rather than derived.
+      ODB_GRAPHQL_URL: ${{ vars.LOADTEST_ODB_GRAPHQL_URL }}
+      SSO_URL: ${{ vars.LOADTEST_SSO_URL }}
+      K6_INSECURE_SKIP_TLS_VERIFY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The load target is new infrastructure (M4). Until it is provisioned and these
+      # variables are set, the nightly run exits green with a notice instead of emailing a
+      # failure every morning for something that is not broken.
+      - name: Check the load target is provisioned
+        id: preflight
+        run: |
+          missing=()
+          for var in LOADTEST_ODB_APP LOADTEST_SSO_APP LOADTEST_ITC_APP \
+                     LOADTEST_ODB_GRAPHQL_URL LOADTEST_SSO_URL; do
+            [[ -n "${!var:-}" ]] || missing+=("$var")
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::notice::load target not provisioned yet (milestone M4). Missing repository variables: ${missing[*]}"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          LOADTEST_ODB_APP: ${{ vars.LOADTEST_ODB_APP }}
+          LOADTEST_SSO_APP: ${{ vars.LOADTEST_SSO_APP }}
+          LOADTEST_ITC_APP: ${{ vars.LOADTEST_ITC_APP }}
+          LOADTEST_ODB_GRAPHQL_URL: ${{ vars.LOADTEST_ODB_GRAPHQL_URL }}
+          LOADTEST_SSO_URL: ${{ vars.LOADTEST_SSO_URL }}
+
+      - uses: actions/setup-node@v4
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.preflight.outputs.ready == 'true'
+
+      - name: Record the run start
+        if: steps.preflight.outputs.ready == 'true'
+        id: run
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - name: Release the load target from today's -dev images and reset its database
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          LOADTEST_ODB_APP: ${{ vars.LOADTEST_ODB_APP }}
+          LOADTEST_SSO_APP: ${{ vars.LOADTEST_SSO_APP }}
+          LOADTEST_ITC_APP: ${{ vars.LOADTEST_ITC_APP }}
+        run: .github/scripts/release-loadtest.sh
+
+      - name: Wait for the load target to migrate and serve guest logins
+        if: steps.preflight.outputs.ready == 'true'
+        run: |
+          for attempt in $(seq 1 120); do
+            status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SSO_URL/api/v1/auth-as-guest" || echo 000)"
+            if [[ "$status" == "201" ]]; then echo "load target is up"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::the load target never served a guest login"
+          exit 1
+
+      - name: Ledger checkout
+        if: steps.preflight.outputs.ready == 'true'
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: run-data
+          path: .run-data
+
+      - name: Calibrate thresholds from the ledger
+        if: steps.preflight.outputs.ready == 'true'
+        id: thresholds
+        env:
+          # On the cron path `inputs.arm-thresholds` is null, and null == false is *true* in
+          # GitHub expressions — so the event has to be checked first or every nightly run
+          # would disarm its thresholds.
+          ARM_THRESHOLDS: ${{ (github.event_name == 'workflow_dispatch' && inputs.arm-thresholds == false) && 'false' || 'true' }}
+        run: |
+          thresholds="$(node tools/compute-thresholds.js --suite=load --dir=.run-data)"
+          echo "json=$thresholds" >> "$GITHUB_OUTPUT"
+          if [[ "$thresholds" == "{}" ]]; then
+            echo "mode=baseline" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=armed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: grafana/setup-k6-action@v1
+        if: steps.preflight.outputs.ready == 'true'
+
+      - name: Annotate the run start in Grafana
+        if: steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: node tools/grafana-annotate.js --kind=start --suite=load --at=${{ steps.run.outputs.started-at }}
+
+      # ~40 minutes: 0→50 over 5m, 50→200 over 10m, hold 200 for 20m, ramp down (spec §6).
+      # Metrics stream to Grafana Cloud live over remote write.
+      - name: k6 load run
+        if: steps.preflight.outputs.ready == 'true'
+        id: k6
+        continue-on-error: true
+        env:
+          GPP_THRESHOLDS: ${{ steps.thresholds.outputs.json }}
+          K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.GC_PROM_RW_URL }}
+          K6_PROMETHEUS_RW_USERNAME: ${{ secrets.GC_PROM_INSTANCE_ID }}
+          K6_PROMETHEUS_RW_PASSWORD: ${{ secrets.GC_PROM_TOKEN }}
+          K6_PROMETHEUS_RW_TREND_STATS: "avg,p(95),p(99)"
+          K6_PROMETHEUS_RW_STALE_MARKERS: "true"
+        run: |
+          mkdir -p out
+          output=()
+          if [[ -n "$K6_PROMETHEUS_RW_SERVER_URL" ]]; then
+            output=(-o experimental-prometheus-rw)
+          else
+            echo "::notice::Grafana Cloud remote-write is not configured; running without live metrics"
+          fi
+          k6 run "${output[@]}" --summary-export out/k6-summary.json k6/load.js
+
+      - name: Write the run summary
+        if: steps.preflight.outputs.ready == 'true'
+        id: summary
+        continue-on-error: true
+        run: |
+          mkdir -p out
+          # --failed records a k6 that died outright: it leaves no summary file, so nothing
+          # else in the record would show that the night produced no usable measurement.
+          failed=""
+          [[ "${{ steps.k6.outcome }}" == "failure" ]] && failed="k6"
+          node tools/write-run-summary.js \
+            --suite=load \
+            --started-at=${{ steps.run.outputs.started-at }} \
+            --k6=out/k6-summary.json \
+            --threshold-mode=${{ steps.thresholds.outputs.mode }} \
+            --failed="$failed" \
+            --dir=.run-data > out/summary-path.txt
+
+      - name: Publish the summary to the run-data branch
+        if: steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/publish-run-data.sh .run-data "$(cat out/summary-path.txt)" \
+            "load ${{ github.run_id }} (${{ steps.thresholds.outputs.mode }})"
+
+      - name: Annotate breaches and the run end in Grafana
+        if: always() && steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: |
+          breaches="$(node tools/k6-breaches.js out/k6-summary.json --join)"
+          if [[ -n "$breaches" ]]; then
+            node tools/grafana-annotate.js --kind=breach --suite=load \
+              --at=${{ steps.run.outputs.started-at }} --breach="$breaches"
+          fi
+          outcome=pass
+          [[ "${{ steps.k6.outcome }}" == "failure" ]] && outcome=fail
+          node tools/grafana-annotate.js --kind=end --suite=load \
+            --at=${{ steps.run.outputs.started-at }} --outcome="$outcome"
+
+      - name: Upload the k6 summary
+        if: always() && steps.preflight.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-${{ github.run_id }}
+          path: out/k6-summary.json
+          retention-days: 30
+
+      - name: Fail on a threshold breach
+        if: steps.k6.outcome == 'failure'
+        run: |
+          echo "::error::load run breached its thresholds (see the Grafana annotation and the run summary)"
+          exit 1

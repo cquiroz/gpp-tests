@@ -1,0 +1,160 @@
+# Daily regression run (spec §8): boot the whole stack from empty, prove the core user
+# journey still works on latest main, and record the outcome.
+name: regression
+
+on:
+  schedule:
+    # 07:00 UTC — early enough that a red run is waiting when the day starts in Chile.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+# Queued, never cancelled: a half-torn-down stack tells you nothing.
+concurrency:
+  group: regression
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the run-data ledger lives on a branch of this repo
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUITE: regression
+      GPP_TEST_DOMAIN: gpp-test.internal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The unit suite validates every GraphQL document against the vendored schema before
+      # anything is booted — seconds well spent.
+      - name: Unit checks
+        run: npm run check
+
+      - name: Record the run start
+        id: run
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - name: Annotate the run start in Grafana
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: node tools/grafana-annotate.js --kind=start --suite=regression --at=${{ steps.run.outputs.started-at }}
+
+      - name: Boot the ephemeral stack
+        uses: ./.github/actions/boot-stack
+        with:
+          heroku-api-key: ${{ secrets.HEROKU_API_KEY }}
+          otel-endpoint: ${{ secrets.ODB_OTEL_ENDPOINT }}
+          otel-key: ${{ secrets.ODB_OTEL_KEY }}
+          domain: gpp-test.internal
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      # continue-on-error on both suites: the summary step is the gate, so a failure still
+      # gets recorded in the ledger and annotated in Grafana before the job goes red.
+      - name: Playwright journey
+        id: journey
+        continue-on-error: true
+        run: |
+          source stack/.env.generated
+          npm run e2e
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: k6 regression variants
+        id: k6
+        continue-on-error: true
+        run: |
+          mkdir -p out
+          source stack/.env.generated
+          k6 run --summary-export out/k6-summary.json k6/regression.js
+
+      - name: Ledger checkout
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: run-data
+          path: .run-data
+
+      - name: Write the run summary
+        id: summary
+        continue-on-error: true
+        run: |
+          mkdir -p out
+          # A suite whose runner died leaves no results file behind, so the step outcomes are
+          # the only evidence that the run produced nothing usable.
+          failed=()
+          [[ "${{ steps.journey.outcome }}" == "failure" ]] && failed+=("journey")
+          [[ "${{ steps.k6.outcome }}" == "failure" ]] && failed+=("k6")
+          node tools/write-run-summary.js \
+            --suite=regression \
+            --started-at=${{ steps.run.outputs.started-at }} \
+            --playwright=out/playwright-results.json \
+            --k6=out/k6-summary.json \
+            --images=out/images.json \
+            --failed="$(IFS=,; echo "${failed[*]-}")" \
+            --dir=.run-data > out/summary-path.txt
+
+      - name: Publish the summary to the run-data branch
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          path="$(cat out/summary-path.txt)"
+          outcome="$(jq -r .outcome ".run-data/$path")"
+          .github/scripts/publish-run-data.sh .run-data "$path" \
+            "regression ${{ github.run_id }}: $outcome"
+
+      - name: Annotate the run end in Grafana
+        if: always()
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: |
+          outcome=pass
+          [[ "${{ steps.journey.outcome }}" == "failure" || "${{ steps.k6.outcome }}" == "failure" ]] && outcome=fail
+          node tools/grafana-annotate.js --kind=end --suite=regression \
+            --at=${{ steps.run.outputs.started-at }} --outcome="$outcome"
+
+      # Traces, videos and screenshots only exist on failure (spec §8).
+      - name: Upload Playwright artifacts
+        if: failure() || steps.journey.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 30
+
+      - name: Upload the k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-regression-${{ github.run_id }}
+          path: |
+            out/k6-summary.json
+            out/images.json
+          retention-days: 30
+
+      - name: Tear the stack down
+        if: always()
+        run: stack/scripts/down.sh
+
+      # The gate. GitHub emails repo watchers on a failed scheduled run, which is v1's single
+      # alerting path (spec §8).
+      - name: Fail if a suite failed
+        if: steps.journey.outcome == 'failure' || steps.k6.outcome == 'failure'
+        run: |
+          echo "::error::regression run failed (journey: ${{ steps.journey.outcome }}, k6: ${{ steps.k6.outcome }})"
+          exit 1

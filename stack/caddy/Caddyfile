@@ -1,0 +1,58 @@
+# TLS front door for the ephemeral stack (spec §3).
+#
+# `tls internal` uses Caddy's own CA: certificates are minted for the *.gpp-test.internal
+# names on first request. Playwright accepts them (see playwright.config.ts), k6 runs with
+# insecureSkipTLSVerify, and Node clients get the root via NODE_EXTRA_CA_CERTS — bootstrap
+# exports it to stack/certs/caddy-root.crt.
+#
+# Explore is proxied from Firebase dev hosting (which tracks lucuma-apps main), so nothing
+# has to build a Scala.js bundle in CI. The one file we override is environments.conf.json,
+# which is what points the app at this stack. Swap CADDYFILE=./caddy/Caddyfile.bundle to
+# serve a locally-built bundle instead (spec §10 ask 3).
+
+{
+	admin off
+	auto_https disable_redirects
+}
+
+explore.{$GPP_TEST_DOMAIN} {
+	tls internal
+
+	# Our endpoints, not the dev environment's. Must not be cached: the PWA's service
+	# worker keeps a copy under the `environments-config` cache.
+	handle /environments.conf.json {
+		root * /srv/explore
+		header Cache-Control "no-store"
+		header Content-Type "application/json"
+		file_server
+	}
+
+	handle {
+		reverse_proxy https://{$EXPLORE_ORIGIN} {
+			header_up Host {$EXPLORE_ORIGIN}
+			# Firebase Hosting serves the SPA fallback itself, so no rewrite is needed.
+		}
+	}
+}
+
+sso.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://sso:8082
+}
+
+odb.{$GPP_TEST_DOMAIN} {
+	tls internal
+	# Covers both /odb (GraphQL over HTTP) and /ws (graphql-ws); reverse_proxy upgrades
+	# websockets transparently.
+	reverse_proxy http://odb:8082
+}
+
+itc.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://itc:6060
+}
+
+prefs.{$GPP_TEST_DOMAIN} {
+	tls internal
+	reverse_proxy http://hasura:8080
+}
