@@ -95,6 +95,10 @@ Settled during charting (constraints for every ticket):
   shared boot composite action; queued concurrency groups; failure notice by email;
   failure-only Playwright artifacts (30 d) + summary JSON on a `run-data` branch;
   Playwright 1 retry with flaky reporting.
+- [Write the testing-system spec](tickets/009-write-the-spec.md) — **the destination,
+  reached**: [gpp-testing-system-spec.md](../gpp-testing-system-spec.md) consolidates
+  all decisions into an implementation-ready design with five rollout milestones.
+  **No open tickets remain — this map is complete.**
 
 ## Not yet specified
 
