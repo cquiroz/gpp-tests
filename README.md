@@ -31,6 +31,12 @@ Node 20+, Docker, `git`, `gpg`, `openssl`, `jq`, [k6](https://grafana.com/docs/k
 and a `HEROKU_API_KEY` with access to the lucuma `-dev` apps (the service images are only in
 Heroku's private registry).
 
+Everything except Docker is provided by the flake — with direnv, `cd` into the repo and you
+have it; otherwise `nix develop`. Docker stays out on purpose: the daemon is host-managed, and
+a nixpkgs `docker` would shadow Docker Desktop's CLI without the Compose v2 plugin these
+scripts call as `docker compose`. See the comments in `flake.nix`, including the NixOS-only
+step for Playwright's browser.
+
 ```bash
 npm ci
 npm run check          # typecheck + unit tests, no stack needed

@@ -18,3 +18,8 @@ stack/.env*
 # k6 raw output and per-run summaries produced locally.
 out/
 *.log
+
+# direnv's cached devShell. flake.nix, flake.lock and .envrc are tracked; this is not.
+.direnv/
+# Local secrets loaded by .envrc (HEROKU_API_KEY, Grafana tokens). Never commit this.
+/.env
