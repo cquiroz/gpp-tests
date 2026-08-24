@@ -22,16 +22,24 @@ export const guestLoginButton = (page: Page): Locator =>
 export const obsTreeAddObservationButton = (page: Page): Locator =>
   page.getByRole("button", { name: /^obs$/i });
 
-/** Side-bar menu that holds "Manage Programs". */
+/**
+ * The toolbar menu holding "Manage Programs".
+ *
+ * It is an icon button with no accessible name — no text, no title, no aria-label — so it can
+ * only be addressed positionally: the last button in the toolbar, after "Getting Started" and
+ * the "Guest User" label. Verified against the running app. This is the single most brittle
+ * selector in the journey and the clearest case for the `data-testid` ask in spec §10.
+ */
 export const mainMenuButton = (page: Page): Locator =>
-  page.getByRole("button", { name: /menu/i }).first();
+  page.getByRole("toolbar").getByRole("button").last();
 
+/** Opened by {@link mainMenuButton}; siblings are About Explore, Recent Progs, Login, Logout. */
 export const managePrograms = (page: Page): Locator =>
-  page.getByText(/manage programs/i).first();
+  page.getByRole("menuitem", { name: /manage programs/i });
 
-/** The "Proposals & Programs" dialog. */
+/** The "Proposals & Programs" dialog — that string is its accessible name. */
 export const programsDialog = (page: Page): Locator =>
-  page.getByRole("dialog").filter({ hasText: /proposals\s*&\s*programs/i });
+  page.getByRole("dialog", { name: /proposals\s*&\s*programs/i });
 
 /**
  * Footer button of that dialog. Labelled "Proposal", but it calls `createProgram` with
@@ -40,14 +48,68 @@ export const programsDialog = (page: Page): Locator =>
 export const createProgramButton = (page: Page): Locator =>
   programsDialog(page).getByRole("button", { name: /^proposal$/i });
 
-/** Split button in the target tile; its menu holds the manual-coordinates action. */
+/**
+ * The dialog row for one program, matched on its id cell — so the assertion is "this exact
+ * program is listed", not "some row appeared".
+ */
+export const programRow = (page: Page, programId: string): Locator =>
+  programsDialog(page)
+    .getByRole("row")
+    .filter({ has: page.getByRole("cell", { name: programId, exact: true }) });
+
+/**
+ * Opens a program and closes the dialog. Creating a program leaves the dialog up — and its
+ * modal mask swallows every click behind it — so the journey must come through here before it
+ * can touch the observation tree. The current program's own Select is disabled.
+ */
+export const selectProgramButton = (page: Page, programId: string): Locator =>
+  programRow(page, programId).getByRole("button", { name: /^select$/i });
+
+/**
+ * Opens the "Add Target" dialog from the target tile. The label is "Add a target" — note the
+ * article; `/add target/i` matches nothing.
+ */
 export const addTargetButton = (page: Page): Locator =>
-  page.getByRole("button", { name: /add target/i }).first();
+  page.getByRole("button", { name: /add a target/i }).first();
 
-/** No catalog lookups in v1 — this action creates a target with default coordinates. */
+/**
+ * Inside that dialog, alongside a Simbad-backed "Name" search box and "Target of
+ * Opportunity". This is the no-catalog path v1 requires: it creates a target immediately with
+ * placeholder coordinates, which the journey then overwrites with the fixture (spec §5).
+ */
 export const emptySiderealTargetItem = (page: Page): Locator =>
-  page.getByText(/empty sidereal target/i).first();
+  page.getByRole("button", { name: /empty sidereal target/i });
 
-/** Inline editable label on the observation card in the obs tree (ObsBadge). */
-export const obsBadgeSubtitle = (page: Page, subtitle: string): Locator =>
-  page.getByText(subtitle, { exact: false });
+/**
+ * The subtitle text on the observation card in the obs tree (ObsBadge).
+ *
+ * Display only — clicking it does nothing, because the badge as a whole is a navigation link.
+ * Editing goes through {@link obsBadgeSubtitleEdit}.
+ */
+export const obsBadgeSubtitle = (page: Page): Locator =>
+  page.locator(".obs-badge-subtitle");
+
+/** Shown in place of the subtitle when an observation has none yet; opens the same editor. */
+export const obsBadgeAddDescription = (page: Page): Locator =>
+  page.getByRole("button", { name: /add description/i });
+
+/**
+ * The pencil button beside an existing subtitle — the only way to reopen the editor. It has
+ * no accessible name (icon only) and sits next to a delete button whose class differs by one
+ * word, so the class is the handle.
+ */
+export const obsBadgeSubtitleEdit = (page: Page): Locator =>
+  page.locator("button.obs-badge-subtitle-edit");
+
+/**
+ * The input the ObsBadge swaps in once its label is clicked.
+ *
+ * Addressed by class because that is the only stable handle: the element has no accessible
+ * name and React gives it a generated id (`_r_9_`). Picking it by role would mean
+ * `getByRole("textbox").first()`, and the observation page carries twenty-odd textboxes —
+ * constraints, wavelengths, signal-to-noise — so "first" is whichever happens to render
+ * earliest. The class comes from Explore's own stylesheet and is as good as a testid until
+ * the real ones land (spec §10).
+ */
+export const obsBadgeSubtitleInput = (page: Page): Locator =>
+  page.locator("input.obs-badge-subtitle-input");

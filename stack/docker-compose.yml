@@ -131,14 +131,33 @@ services:
       PORT: "8082"
     expose:
       - "8082"
+    # The ODB runs its ~900 Flyway migrations *before* binding the port, so "the port is
+    # listening" is a precise signal that the schema is complete — which is what obscalc
+    # below actually needs to wait for. The image ships neither curl nor wget, hence bash's
+    # /dev/tcp rather than an HTTP probe.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082"]
+      interval: 10s
+      timeout: 5s
+      # Migrating from empty takes minutes; start_period keeps the failures during that
+      # window from counting against the retry budget.
+      retries: 5
+      start_period: 15m
 
   # Background calculations (execution digests, workflow state). Without it the journey's
   # "calculated results appear" assertion — the ITC/obscalc liveness check — never passes.
   obscalc:
     image: ${OBSCALC_IMAGE:-registry.heroku.com/lucuma-postgres-odb-dev/obscalc:latest}
     depends_on:
+      # service_healthy, not service_started: obscalc queries ODB tables directly at boot and
+      # exits 1 if they are not there yet ("Relation t_time_estimate does not exist"). The odb
+      # *container* starts in seconds; its schema takes minutes.
       odb:
-        condition: service_started
+        condition: service_healthy
+    # Belt and braces: obscalc is the one service whose failure is silent (nothing probes it
+    # during readiness), so if it still loses a race it retries instead of staying dead and
+    # failing the journey's calculated-results assertion twenty minutes later.
+    restart: on-failure
     environment:
       <<: *odb-env
       PORT: "8083"
@@ -158,9 +177,13 @@ services:
       HASURA_GRAPHQL_DEFAULT_NAMING_CONVENTION: graphql-default
       HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
       HASURA_GRAPHQL_DEV_MODE: "true"
-      # Unauthenticated on purpose: Explore connects to prefs with an empty init payload.
-      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: admin
       HASURA_GRAPHQL_MIGRATIONS_DATABASE_NAME: default
+      # Deliberately no HASURA_GRAPHQL_ADMIN_SECRET and no HASURA_GRAPHQL_UNAUTHORIZED_ROLE:
+      # with no admin secret Hasura does no auth at all and every request is admin, which is
+      # what Explore needs (it opens the prefs websocket with an empty init payload). Setting
+      # `unauthorized_role` here is not just redundant but fatal — Hasura refuses to start
+      # with "requires --admin-secret ... to be set", and Explore then hangs after login
+      # waiting for a prefs socket that never connects.
     volumes:
       - ${LUCUMA_APPS_DIR:-./.cache/lucuma-apps}/explore/hasura/user-prefs/migrations:/hasura-migrations:ro
       - ${LUCUMA_APPS_DIR:-./.cache/lucuma-apps}/explore/hasura/user-prefs/metadata:/hasura-metadata:ro

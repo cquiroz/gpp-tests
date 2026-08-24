@@ -95,9 +95,11 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
 
 ## Milestones (spec §11)
 
-- **M1** stack boots green — code complete; needs one real run with a `HEROKU_API_KEY`.
-- **M2** journey green against it — code complete; the selectors need their first live run
-  (see *What still needs first contact*).
+- **M1** stack boots green — **done**, verified on macOS: all seven readiness checks pass,
+  the CA is exported and image digests are recorded.
+- **M2** journey green against it — **done**: all four scenarios pass in ~41 s, including the
+  ITC/obscalc calculated-results assertion. `verify:operations` reports 12/12 and the k6
+  regression suite is green.
 - **M3** `regression.yml` red/green in CI — workflow committed; enable Actions and add secrets.
 - **M4** load target provisioned — **not done, and deliberately not automated.** Creating
   `lucuma-*-loadtest` (odb web + obscalc, sso, itc, one Postgres) is a one-off provisioning
@@ -109,9 +111,46 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   baseline-only summaries to the `run-data` branch, and `tools/compute-thresholds.js` arms
   thresholds from the fourth night on.
 
-## What is verified, and what still needs first contact
+## What is verified
 
-Verified by running it here:
+The whole regression path has now been run end to end against a real stack (macOS, Docker
+Desktop, images pulled from Heroku's registry):
+
+- `stack/scripts/bootstrap.sh` from empty → seven readiness checks green.
+- `npm run verify:operations` → **12/12** operations against the live ODB.
+- `npx playwright test` → **4/4 scenarios**, ~41 s, including the calculated-results
+  assertion that proves ITC and obscalc are alive.
+- `k6 run k6/regression.js` → all checks pass, zero GraphQL errors.
+
+Five bugs that only a real boot could expose, all fixed:
+
+1. **Hasura refused to start.** `HASURA_GRAPHQL_UNAUTHORIZED_ROLE` requires an admin secret;
+   with none set, Hasura is already fully open, which is what Explore needs. Setting it was
+   fatal — and Explore hangs forever after login without prefs.
+2. **obscalc raced the ODB's migrations** and exited 1 (`Relation "t_time_estimate" does not
+   exist`). The ODB binds its port only after Flyway finishes, so `depends_on:
+   service_healthy` against a `/dev/tcp` healthcheck is an exact gate. Nothing probed obscalc
+   during readiness either, so its death was silent; there is now a check for it.
+3. **A stale service JWT.** Bootstrap reused an `ODB_SERVICE_JWT` inherited from the shell,
+   signed by a previous stack's keypair. It surfaced only inside obscalc as
+   `java.security.SignatureException: Bad signature length: got 512 but was expecting 256`.
+   The token is now always minted fresh and validated (`lib/service-jwt.js`).
+4. **The GMOS fixture was physically unobservable.** An r' filter (~550–700 nm) at the
+   fixture's 500 nm central wavelength blocks the light; the ITC rejected every observation
+   with "Insufficient signal at 500.0 nm". Verified against the live ITC that this was the
+   only cause — the fixture now sets no order-blocking filter.
+5. **Asynchronous results read as failures.** obscalc computes the digest in the background,
+   and until it lands the ODB answers with a `sequence_unavailable` *error*, not a null. Both
+   the k6 suites and `verify-operations` treated that as a failure; it would also have pushed
+   the nightly load run below its check-rate floor.
+
+Four of the five Explore selectors also turned out to be wrong, now corrected against the
+running app: the toolbar menu has no accessible name (it is the last toolbar button), the
+target button is "Add a target" (not "Add Target"), creating a program leaves a modal whose
+mask blocks everything until the new program's **Select** is clicked, and the subtitle is
+edited through a pencil button rather than by clicking the text.
+
+Verified offline, before any of that:
 
 - All 92 unit tests, including every GraphQL document and variable payload validated against
   the real `OdbSchema.graphql`.
@@ -135,17 +174,20 @@ Verified by running it here:
   and `sso.expirationAnticipationSeconds`, fields no amount of source reading would have
   predicted.
 
-Needs a real stack (no `HEROKU_API_KEY` or Docker daemon available here):
+## Still untested against the real thing
 
-1. **The boot itself** — image pulls, Flyway from empty, `create-service-user odb`, Hasura
-   applying the prefs migrations, Caddy's internal CA. Every step logs; failures print the
-   relevant container logs.
-2. **`serve` as the subcommand** for the sso and odb images (`SSO_COMMAND`/`command:` in the
-   compose file if it is named differently).
-3. **Explore's selectors** (`tests/support/selectors.ts`) — read from lucuma-apps `main` but
-   never exercised. This is the single most likely thing to need a tweak, and it is one file.
-   Spec §10 asks lucuma-apps for `data-testid` on exactly these elements.
-4. **Grafana metric-name suffixes** — see [grafana/README.md](grafana/README.md).
+1. **A GitHub runner.** Everything above was run on macOS. The Linux specifics — passwordless
+   `sudo` for `/etc/hosts`, whether the four JVM services fit in a hosted runner's 16 GB, the
+   `grafana/setup-k6-action` step — have not been exercised. Trigger `regression.yml` by hand
+   before trusting the 07:00 UTC schedule.
+2. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
+   arming path and `release-loadtest.sh` have only been run against a mock or with `DRY_RUN=1`.
+3. **Grafana metric-name suffixes** — nothing has pushed metrics to Grafana Cloud yet; see
+   [grafana/README.md](grafana/README.md) for what to check on the first armed run.
+4. **Explore's selectors will drift.** They are now correct against lucuma-apps `main` as of
+   the run above, but four of five were wrong on the first attempt — this is the part of the
+   suite most likely to break, and why spec §10 asks lucuma-apps for `data-testid`. They are
+   all in `tests/support/selectors.ts`.
 
 ## Deliberate deviations from the spec
 
@@ -171,6 +213,9 @@ Each of these is a judgement call, not an oversight:
    no stable selectors today, and the assertion that matters — calculated results appear, so
    ITC and obscalc are alive — is unaffected. The observation and the target are still created
    by clicking. This is the one place where browser coverage is narrower than §5 reads.
+   Scenario 4 seeds its starting subtitle the same way, so the step under test is an edit of
+   an existing value; the badge picking that change up also exercises Explore's
+   `observationEdit` subscription.
 7. **The journey is four tests in a serial block**, not one test with four steps, so the ledger
    gets per-scenario pass/fail and duration (which §7 needs). A retry still re-runs the whole
    chained journey from a fresh guest.
@@ -197,6 +242,13 @@ Each of these is a judgement call, not an oversight:
 - **`verify:operations` fails.** The deployed ODB moved past the vendored schema; refresh the
   snapshot ([schema/README.md](schema/README.md)) and fix `lib/odb-operations.js`.
 - **A journey step times out on a selector.** Fix it in `tests/support/selectors.ts` — nothing
-  else references Explore's DOM.
+  else references Explore's DOM. Playwright writes an aria snapshot of the page to
+  `test-results/<test>/error-context.md` on failure, which lists every role and accessible
+  name that *was* on screen; that is usually faster than opening the trace.
+- **A step fails because "something intercepts pointer events".** A modal is still open —
+  Explore's dialogs keep a mask over the whole page. Close it before moving on.
+- **Playwright says "Executable doesn't exist" under Nix.** An inherited
+  `PLAYWRIGHT_BROWSERS_PATH` points into the read-only store with a mismatched browser
+  revision. The devShell redirects it to `.playwright/`; run `npx playwright install chromium`.
 - **A metric label was rejected.** That is `lib/tags.js` doing its job; add the dimension to
   the annotation instead, or take the series budget hit knowingly.

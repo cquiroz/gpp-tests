@@ -145,8 +145,16 @@ export function readMixScenario(session, { programId, observationId, measure }) 
 }
 
 /**
- * The calculated-results read: cheap for the server to answer but it is what proves the
- * obscalc worker is keeping up under load.
+ * The calculated-results read: the query Explore polls while obscalc catches up.
+ *
+ * `sequence_unavailable` is tolerated because it is the *normal* answer for a freshly created
+ * observation — obscalc computes the digest asynchronously, and until it finishes the ODB
+ * replies with that error rather than a null field. Treating it as a failure would make the
+ * k6 regression suite red on every run, and would push the load suite below its check-rate
+ * floor for no reason. Asserting the values actually arrive is the Playwright journey's job
+ * (spec §5 scenario 3), which polls for up to five minutes.
+ *
+ * An `itc_error` is *not* tolerated: that means the configuration cannot be computed at all.
  *
  * @param {{token: string}} session
  * @param {string} observationId
@@ -156,6 +164,7 @@ export function calculatedResultsScenario(session, observationId, opts = {}) {
   const data = gql(session, observationCalculated({ observationId }), {
     scenario: "calculated-results",
     measure: opts.measure,
+    tolerate: ["sequence_unavailable"],
   });
   return Boolean(data);
 }

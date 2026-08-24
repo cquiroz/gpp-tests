@@ -89,42 +89,54 @@ compose up --detach sso
 # This doubles as the readiness gate for SSO: the subcommand needs a migrated SSO database
 # and the signing key, so retrying it until a JWT appears is both simpler and stricter than
 # probing an HTTP endpoint from inside the network.
+#
+# Always minted fresh, never inherited. A JWT from a previous stack is signed by that stack's
+# keypair, and this one will not verify it — a mismatch that surfaces minutes later as
+# `java.security.SignatureException: Bad signature length` deep inside obscalc, with nothing
+# pointing back at the token. `create-service-user` is idempotent for a given service name
+# ("if it is lost you may re-run this command"), so re-minting costs seconds and removes the
+# whole failure mode.
 # ---------------------------------------------------------------------------
-if [[ -z "${ODB_SERVICE_JWT:-}" ]]; then
-  log "minting the ODB service JWT (create-service-user odb)"
-  attempts="${SERVICE_USER_ATTEMPTS:-40}"
-  for attempt in $(seq 1 "$attempts"); do
-    service_user_output="$(compose run --rm --no-deps -T sso create-service-user odb 2>&1)" || true
+unset ODB_SERVICE_JWT
 
-    # The subcommand prints a JWT among its log lines; take the last JWT-shaped token.
-    # `|| true` matters: no match makes grep exit 1, and with `set -e -o pipefail` that
-    # would abort the bootstrap on the first attempt instead of retrying.
-    ODB_SERVICE_JWT="$(printf '%s\n' "$service_user_output" \
-      | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' \
-      | tail -1 || true)"
-    if [[ -n "$ODB_SERVICE_JWT" ]]; then break; fi
+log "minting the ODB service JWT (create-service-user odb)"
+attempts="${SERVICE_USER_ATTEMPTS:-40}"
+for attempt in $(seq 1 "$attempts"); do
+  # `docker exec` on the running sso rather than `compose run`, so the token is minted by the
+  # very container the stack is using — same keypair, by construction.
+  service_user_output="$(compose exec -T sso \
+    /opt/docker/bin/lucuma-sso-service create-service-user odb 2>&1)" || true
 
-    if [[ "$attempt" -eq "$attempts" ]]; then
-      printf '%s\n' "$service_user_output" >&2
-      warn "last 40 lines of the sso log:"
-      compose logs --tail 40 sso >&2 || true
-      die "could not mint a service JWT after $attempts attempts (output above)"
-    fi
-    if [[ $(( attempt % 6 )) -eq 0 ]]; then
-      log "still waiting for SSO (attempt $attempt/$attempts)"
-    fi
-    sleep 5
-  done
+  # The subcommand prints a JWT among its log lines; take the last JWT-shaped token.
+  # `|| true` matters: no match makes grep exit 1, and with `set -e -o pipefail` that
+  # would abort the bootstrap on the first attempt instead of retrying.
+  ODB_SERVICE_JWT="$(printf '%s\n' "$service_user_output" \
+    | grep -oE 'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+' \
+    | tail -1 || true)"
 
-  echo "export ODB_SERVICE_JWT=\"$ODB_SERVICE_JWT\"" >> "$GENERATED_ENV"
-  export ODB_SERVICE_JWT
-  log "service JWT minted (${#ODB_SERVICE_JWT} chars)"
-else
-  # The generated env file was rewritten from scratch above, so the JWT has to be recorded
-  # again or the next `source stack/.env.generated` would come back without it.
-  log "reusing the existing service JWT"
-  echo "export ODB_SERVICE_JWT=\"$ODB_SERVICE_JWT\"" >> "$GENERATED_ENV"
-fi
+  # Scraping stdout is inherently loose, so check we grabbed the right thing: a service-user
+  # token whose signature was made by the key this stack is running.
+  if [[ -n "$ODB_SERVICE_JWT" ]] \
+    && node "$REPO_DIR/tools/check-service-jwt.js" "$ODB_SERVICE_JWT" \
+         --public-key "$STACK_DIR/keys/sso-public.asc"; then
+    break
+  fi
+
+  if [[ "$attempt" -eq "$attempts" ]]; then
+    printf '%s\n' "$service_user_output" >&2
+    warn "last 40 lines of the sso log:"
+    compose logs --tail 40 sso >&2 || true
+    die "could not mint a usable service JWT after $attempts attempts (output above)"
+  fi
+  if [[ $(( attempt % 6 )) -eq 0 ]]; then
+    log "still waiting for SSO (attempt $attempt/$attempts)"
+  fi
+  sleep 5
+done
+
+echo "export ODB_SERVICE_JWT=\"$ODB_SERVICE_JWT\"" >> "$GENERATED_ENV"
+export ODB_SERVICE_JWT
+log "service JWT minted (${#ODB_SERVICE_JWT} chars)"
 
 # ---------------------------------------------------------------------------
 # 5. Explore's runtime configuration, then everything else

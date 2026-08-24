@@ -11,12 +11,14 @@ import { graphqlErrors, readDuration, tags, writeDuration } from "./metrics.js";
 /**
  * @param {{token: string}} session
  * @param {import('../../lib/odb-operations.js').Operation} operation
- * @param {{scenario: string, measure?: boolean}} opts
+ * @param {{scenario: string, measure?: boolean, tolerate?: string[]}} opts
  *   `measure: false` keeps a sample out of the read/write trends — used for the per-VU
  *   seeding phase, which happens during the ramp and is not part of the measured mix.
+ *   `tolerate` lists `odb_error` tags that are a normal state rather than a failure; the
+ *   request is still timed, but it does not count as an error.
  * @returns {any | undefined} the `data` payload, or undefined if the call failed
  */
-export function gql(session, operation, { scenario, measure = true }) {
+export function gql(session, operation, { scenario, measure = true, tolerate }) {
   const kind = OPERATION_KIND[operation.operationName] || "read";
   const requestTags = tags({ scenario, operation: operation.operationName });
 
@@ -49,7 +51,19 @@ export function gql(session, operation, { scenario, measure = true }) {
     }
   }
 
-  const ok = response.status === 200 && !errors && data !== undefined;
+  // An error every one of whose entries is an expected transient state is not a failure.
+  // Every entry must match: a real problem (an itc_error, say) arriving alongside a tolerated
+  // one must still fail.
+  const tolerated =
+    !!errors &&
+    errors.length > 0 &&
+    !!tolerate &&
+    errors.every((e) => tolerate.some((tag) => JSON.stringify(e).includes(tag)));
+
+  // A tolerated response carries an `errors` array and usually no `data` at all, so the
+  // data check only applies to genuine successes.
+  const ok =
+    response.status === 200 && (tolerated || (!errors && data !== undefined));
   check(response, {
     [`${operation.operationName} succeeded`]: () => ok,
   });
@@ -73,5 +87,12 @@ export function gql(session, operation, { scenario, measure = true }) {
     trend.add(response.timings.duration, sampleTags);
   }
 
-  return ok ? data : undefined;
+  if (!ok) return undefined;
+  // Callers treat the return value as both the payload and a success flag, so a tolerated
+  // response — valid query, value not computed yet — needs a truthy marker rather than the
+  // `data` it does not have.
+  return tolerated ? PENDING : data;
 }
+
+/** Returned by {@link gql} when the query succeeded but the value is still being calculated. */
+export const PENDING = { pending: true };

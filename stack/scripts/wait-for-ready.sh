@@ -53,6 +53,14 @@ check_itc() {
   upstream_up "https://itc.$GPP_TEST_DOMAIN/itc"
 }
 
+# obscalc is a background worker with nothing to probe over HTTP, so its death is otherwise
+# silent — and the cost of not noticing is the journey failing on the calculated-results
+# assertion twenty minutes later. "Still running" is the whole contract: it exits 1 when it
+# cannot see the ODB schema.
+check_obscalc() {
+  compose ps --services --status running 2>/dev/null | grep -qx obscalc
+}
+
 check_explore() {
   [[ "$(http_status "https://explore.$GPP_TEST_DOMAIN/")" == "200" ]]
 }
@@ -64,7 +72,7 @@ check_explore_conf() {
     | grep -q "odb.$GPP_TEST_DOMAIN"
 }
 
-CHECKS=(check_sso check_odb check_itc check_hasura check_explore check_explore_conf)
+CHECKS=(check_sso check_odb check_itc check_obscalc check_hasura check_explore check_explore_conf)
 # A space-delimited list rather than an associative array: stock /bin/bash on macOS is 3.2,
 # which has no `declare -A`, and this script is run locally as often as in CI.
 READY=" "

@@ -98,8 +98,17 @@ test("scenario 2: create a program", async () => {
     );
   });
 
-  await test.step("the UI lists it too", async () => {
-    // The dialog closes onto the new program; the obs tree comes back for it.
+  await test.step("the UI lists it too, by id", async () => {
+    await expect(ui.programRow(page, journey.createdProgramId!)).toBeVisible();
+  });
+
+  await test.step("open it, which closes the dialog", async () => {
+    // Not optional housekeeping: creating a program leaves the dialog up, and its modal mask
+    // intercepts every click behind it — the observation tree is unreachable until the dialog
+    // is gone. Selecting the row is also how a user would get to their new program.
+    await ui.selectProgramButton(page, journey.createdProgramId!).click();
+    await expect(ui.programsDialog(page)).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(journey.createdProgramId!));
     await expect(ui.obsTreeAddObservationButton(page)).toBeVisible();
   });
 });
@@ -213,16 +222,19 @@ test("scenario 4: edit the subtitle and read it back after a reload", async () =
   expect(observationId, "scenario 3 must have created an observation").toBeTruthy();
 
   await test.step("set a subtitle to edit", async () => {
-    // Seed through the API so the UI has a stable label to click in the next step.
+    // Seeded through the API so the step under test is an *edit* of an existing subtitle.
+    // The badge picking this up is itself worth asserting: it only happens through Explore's
+    // `observationEdit` subscription, so it exercises the websocket path the UI relies on.
     await odb.run(updateObservationSubtitle({ observationId, subtitle: SUBTITLE }));
-    await expect(ui.obsBadgeSubtitle(page, SUBTITLE)).toBeVisible({
+    await expect(ui.obsBadgeSubtitle(page)).toHaveText(SUBTITLE, {
       timeout: 60_000,
     });
   });
 
   await test.step("edit it inline on the observation card", async () => {
-    await ui.obsBadgeSubtitle(page, SUBTITLE).click();
-    const input = page.getByRole("textbox").first();
+    await ui.obsBadgeSubtitleEdit(page).click();
+    const input = ui.obsBadgeSubtitleInput(page);
+    await expect(input).toBeEditable();
     await input.fill(EDITED_SUBTITLE);
     await input.press("Enter");
   });
@@ -240,7 +252,7 @@ test("scenario 4: edit the subtitle and read it back after a reload", async () =
 
   await test.step("it survives a full page reload", async () => {
     await page.reload();
-    await expect(ui.obsBadgeSubtitle(page, EDITED_SUBTITLE)).toBeVisible({
+    await expect(ui.obsBadgeSubtitle(page)).toHaveText(EDITED_SUBTITLE, {
       timeout: 120_000,
     });
 

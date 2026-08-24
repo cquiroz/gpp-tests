@@ -65,18 +65,26 @@ async function run(token, operation) {
 /**
  * @param {string} token
  * @param {import('../lib/odb-operations.js').Operation} operation
+ * @param {{tolerate?: string[]}} [opts] `odb_error` tags that mean "the document is fine, the
+ *   data just is not there yet" — not a contract failure.
  */
-async function check(token, operation) {
+async function check(token, operation, opts = {}) {
   try {
     const data = await run(token, operation);
     results.push({ name: operation.operationName, ok: true });
     return data;
   } catch (error) {
-    results.push({
-      name: operation.operationName,
-      ok: false,
-      detail: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    const tolerated = (opts.tolerate ?? []).find((tag) => message.includes(tag));
+    if (tolerated) {
+      results.push({
+        name: operation.operationName,
+        ok: true,
+        detail: `accepted: ${tolerated} (the query is valid; the value is still being calculated)`,
+      });
+      return undefined;
+    }
+    results.push({ name: operation.operationName, ok: false, detail: message });
     return undefined;
   }
 }
@@ -134,8 +142,14 @@ await check(token, observations({ programId }));
 await check(token, targets({ programId }));
 if (observationId) {
   await check(token, observation({ observationId }));
-  // Only checks that the query is answerable — the values are still being calculated.
-  await check(token, observationCalculated({ observationId }));
+  // obscalc computes the digest asynchronously and takes tens of seconds, so immediately
+  // after creating an observation the ODB answers this query with a `sequence_unavailable`
+  // error rather than a value. That is the expected state here: this tool checks that the
+  // deployed ODB still understands our documents, not that a background worker has caught up.
+  // Waiting for READY is the Playwright journey's job (spec §5 scenario 3).
+  await check(token, observationCalculated({ observationId }), {
+    tolerate: ["sequence_unavailable"],
+  });
 }
 
 report();

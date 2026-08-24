@@ -52,6 +52,17 @@
           #   registry.
 
           shellHook = ''
+            # A PLAYWRIGHT_BROWSERS_PATH inherited from the ambient environment (home-manager
+            # sets one to a /nix/store path) breaks Playwright two ways: the store is
+            # read-only so `playwright install` cannot write to it, and the browser revision
+            # there rarely matches the @playwright/test version in package.json — which
+            # surfaces as "Executable doesn't exist at /nix/store/...". Point it at a
+            # writable, gitignored directory inside the repo instead, so the browser is
+            # always the one this project pins. Override it yourself to opt out.
+            if [ -z "''${ODBATTR_KEEP_BROWSERS_PATH:-}" ]; then
+              export PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright"
+            fi
+
             if [ -z "''${ODBATTR_QUIET:-}" ]; then
               echo "odbattr · node $(node --version) · $(k6 version | head -1)"
 
@@ -63,6 +74,10 @@
 
               if [ ! -d node_modules ]; then
                 echo "  → run 'npm ci' first"
+              fi
+
+              if [ ! -d "''${PLAYWRIGHT_BROWSERS_PATH:-.playwright}" ]; then
+                echo "  → for the browser journey: npx playwright install chromium"
               fi
 
               echo "  npm run check      typecheck + 94 unit tests, nothing else needed"
