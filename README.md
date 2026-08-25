@@ -24,7 +24,7 @@ Grafana Cloud stack.
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
 | `.github/` | `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
-| `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. |
+| `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. Includes the [AWS load-target design note](research/aws-load-target-options.md). |
 
 ## Prerequisites
 

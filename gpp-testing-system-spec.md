@@ -172,6 +172,11 @@ users; unlocks proposals); catalog Target Search scenario (Simbad); WebSocket
 subscriptions in the load mix; distributed k6; trend-based Grafana alerts; the other
 lightly-used web apps; new-user signup flow; AWS environment for absolute capacity.
 
+The last two of those are entangled and now have a design note:
+[AWS load-target options](research/aws-load-target-options.md) — what is already portable,
+two shapes costed, and why absolute capacity needs the k6 generator moved off the hosted
+runner as well as the target.
+
 ## 13. Out of scope
 
 Load-testing SSO itself; the lucuma repos' own unit/integration CI; paid test SaaS.
