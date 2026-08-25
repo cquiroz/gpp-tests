@@ -75,7 +75,10 @@ jobs:
         id: run
         run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
 
-      - name: Release the load target from today's -dev images and reset its database
+      # Also scales the dynos up: they sit at zero between runs, so a nightly costs ~40
+      # minutes of dyno time rather than a month of it.
+      - name: Release the load target, reset its database and scale it up
+        id: release
         if: steps.preflight.outputs.ready == 'true'
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
@@ -87,9 +90,13 @@ jobs:
       - name: Wait for the load target to migrate and serve guest logins
         if: steps.preflight.outputs.ready == 'true'
         run: |
+          # From a cold start this is four JVM services booting and the ODB migrating from
+          # empty, so allow 20 minutes. A guest login proves SSO is up and migrated; the k6
+          # script fails fast on its own if the ODB is not.
           for attempt in $(seq 1 120); do
-            status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SSO_URL/api/v1/auth-as-guest" || echo 000)"
-            if [[ "$status" == "201" ]]; then echo "load target is up"; exit 0; fi
+            status="$(curl -s -o /dev/null -m 15 -w '%{http_code}' -X POST "$SSO_URL/api/v1/auth-as-guest" || echo 000)"
+            if [[ "$status" == "201" ]]; then echo "load target is up after $(( attempt * 10 ))s"; exit 0; fi
+            if [[ $(( attempt % 6 )) -eq 0 ]]; then echo "still waiting ($(( attempt * 10 ))s, last status $status)"; fi
             sleep 10
           done
           echo "::error::the load target never served a guest login"
@@ -218,6 +225,19 @@ jobs:
           name: k6-load-${{ github.run_id }}
           path: out/k6-summary.json
           retention-days: 30
+
+      # `always()`, and keyed off the release step rather than the run's outcome: a cancelled
+      # or failed run leaves four performance dynos up, and nothing else would ever bring them
+      # down. The script is best-effort and cannot fail the job — it emits a ::warning:: if it
+      # could not scale down, so idle dynos are visible even on a green run.
+      - name: Scale the load target back to zero
+        if: always() && steps.release.outcome != 'skipped'
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          LOADTEST_ODB_APP: ${{ vars.LOADTEST_ODB_APP }}
+          LOADTEST_SSO_APP: ${{ vars.LOADTEST_SSO_APP }}
+          LOADTEST_ITC_APP: ${{ vars.LOADTEST_ITC_APP }}
+        run: .github/scripts/scale-down-loadtest.sh
 
       - name: Fail on a threshold breach
         if: steps.k6.outcome == 'failure'

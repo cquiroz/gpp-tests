@@ -22,6 +22,7 @@ Grafana Cloud stack.
 | `k6/` | The k6 suites: `regression.js` (scenario variants) and `load.js` (the 200-VU model), plus their libs. |
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
+| `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
 | `.github/` | `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
 | `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. |
 
@@ -105,12 +106,14 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   `ubuntu-latest` runner: stack booted from empty, all four scenarios passed, k6 clean, and
   the summary was published to the `run-data` branch. Total 213 s. Email notification on
   failure is GitHub's default for scheduled runs and needs nothing configured.
-- **M4** load target provisioned — **not done, and deliberately not automated.** Creating
-  `lucuma-*-loadtest` (odb web + obscalc, sso, itc, one Postgres) is a one-off provisioning
-  job; `.github/scripts/release-loadtest.sh` then releases today's `-dev` images into it every
-  night. Until the repository variables `LOADTEST_ODB_APP`, `LOADTEST_SSO_APP`,
-  `LOADTEST_ITC_APP`, `LOADTEST_ODB_GRAPHQL_URL` and `LOADTEST_SSO_URL` are set, the nightly
-  workflow exits green with a notice instead of emailing a failure every morning.
+- **M4** load target — tooling ready, **not yet provisioned**. `loadtest/provision.sh` creates
+  the `lucuma-*-loadtest` app set: dry run by default, idempotent, and it refuses to scale
+  dynos down while a run is in flight. It creates billable resources and needs create-app
+  rights in the team, so a person runs it rather than CI. See
+  [loadtest/README.md](loadtest/README.md) for the sequence, the cost and the caveats. Until
+  the five `LOADTEST_*` repository variables are set, `performance.yml` exits green with a
+  notice instead of emailing a failure every morning. Dynos sit at zero between runs and are
+  scaled up per run, so a nightly costs roughly 20 dyno-hours a month rather than 720.
 - **M5** baseline captured, thresholds armed — automatic: the first three nights write
   baseline-only summaries to the `run-data` branch, and `tools/compute-thresholds.js` arms
   thresholds from the fourth night on.
@@ -181,7 +184,8 @@ Verified offline, before any of that:
 ## Still untested against the real thing
 
 1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
-   arming path and `release-loadtest.sh` have only been run against a mock or with `DRY_RUN=1`.
+   arming path, `provision.sh` and `release-loadtest.sh` have only been exercised as dry runs
+   or against a stubbed `heroku` CLI. The 200-VU profile has never run against Heroku dynos.
 2. **Grafana metrics.** Run annotations work — CI posts start and end annotations and Grafana
    returns `{"id":…,"message":"Annotation added"}`. Metrics remote-write has still never run,
    because it only happens on a load run; the metric-name suffixes are the likely snag there
