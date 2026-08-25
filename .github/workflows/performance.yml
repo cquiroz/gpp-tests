@@ -36,7 +36,7 @@ jobs:
       SSO_URL: ${{ vars.LOADTEST_SSO_URL }}
       K6_INSECURE_SKIP_TLS_VERIFY: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The load target is new infrastructure (M4). Until it is provisioned and these
       # variables are set, the nightly run exits green with a notice instead of emailing a
@@ -62,7 +62,7 @@ jobs:
           LOADTEST_ODB_GRAPHQL_URL: ${{ vars.LOADTEST_ODB_GRAPHQL_URL }}
           LOADTEST_SSO_URL: ${{ vars.LOADTEST_SSO_URL }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.preflight.outputs.ready == 'true'
         with:
           node-version: 22
@@ -95,10 +95,23 @@ jobs:
           echo "::error::the load target never served a guest login"
           exit 1
 
-      - name: Ledger checkout
+      # See the same step in regression.yml: asking actions/checkout for a branch that does
+      # not exist yet burns three retries before failing. For this workflow it also decides
+      # whether thresholds can be armed at all — no ledger means a baseline-only night.
+      - name: Is there a ledger yet?
+        id: ledger
         if: steps.preflight.outputs.ready == 'true'
-        uses: actions/checkout@v4
-        continue-on-error: true
+        run: |
+          if git ls-remote --exit-code --heads origin run-data >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=No ledger yet::First load run — no baseline exists, so this night runs threshold-free."
+          fi
+
+      - name: Ledger checkout
+        if: steps.ledger.outputs.exists == 'true'
+        uses: actions/checkout@v7
         with:
           ref: run-data
           path: .run-data
@@ -200,7 +213,7 @@ jobs:
 
       - name: Upload the k6 summary
         if: always() && steps.preflight.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-load-${{ github.run_id }}
           path: out/k6-summary.json

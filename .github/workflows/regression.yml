@@ -24,9 +24,9 @@ jobs:
       SUITE: regression
       GPP_TEST_DOMAIN: gpp-test.internal
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -78,9 +78,22 @@ jobs:
           source stack/.env.generated
           k6 run --summary-export out/k6-summary.json k6/regression.js
 
+      # The ledger branch does not exist until the first run publishes to it, and asking
+      # actions/checkout for a missing ref costs three failed fetches and ~25s before giving
+      # up — with a red X that looks like a real problem. Ask first.
+      - name: Is there a ledger yet?
+        id: ledger
+        run: |
+          if git ls-remote --exit-code --heads origin run-data >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=No ledger yet::The run-data branch will be created when this run publishes its summary."
+          fi
+
       - name: Ledger checkout
-        uses: actions/checkout@v4
-        continue-on-error: true
+        if: steps.ledger.outputs.exists == 'true'
+        uses: actions/checkout@v7
         with:
           ref: run-data
           path: .run-data
@@ -129,7 +142,7 @@ jobs:
       # Traces, videos and screenshots only exist on failure (spec §8).
       - name: Upload Playwright artifacts
         if: failure() || steps.journey.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ github.run_id }}
           path: |
@@ -139,7 +152,7 @@ jobs:
 
       - name: Upload the k6 summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-regression-${{ github.run_id }}
           path: |

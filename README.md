@@ -100,7 +100,11 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
 - **M2** journey green against it — **done**: all four scenarios pass in ~41 s, including the
   ITC/obscalc calculated-results assertion. `verify:operations` reports 12/12 and the k6
   regression suite is green.
-- **M3** `regression.yml` red/green in CI — workflow committed; enable Actions and add secrets.
+- **M3** `regression.yml` green in CI — **done**, run
+  [32863434794](https://github.com/cquiroz/gpp-tests/actions/runs/32863434794) on an
+  `ubuntu-latest` runner: stack booted from empty, all four scenarios passed, k6 clean, and
+  the summary was published to the `run-data` branch. Total 213 s. Email notification on
+  failure is GitHub's default for scheduled runs and needs nothing configured.
 - **M4** load target provisioned — **not done, and deliberately not automated.** Creating
   `lucuma-*-loadtest` (odb web + obscalc, sso, itc, one Postgres) is a one-off provisioning
   job; `.github/scripts/release-loadtest.sh` then releases today's `-dev` images into it every
@@ -176,17 +180,15 @@ Verified offline, before any of that:
 
 ## Still untested against the real thing
 
-1. **A GitHub runner, past the image pull.** A first CI run got as far as the registry: cert
-   generation, the GPG keypair, the lucuma-apps clone and the `/etc/hosts` edit (passwordless
-   `sudo`) all work on Linux. Still unproven there: whether the four JVM services fit in a
-   hosted runner's memory, and the `grafana/setup-k6-action` step. Trigger `regression.yml` by
-   hand before trusting the 07:00 UTC schedule.
-2. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
+1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
    arming path and `release-loadtest.sh` have only been run against a mock or with `DRY_RUN=1`.
-3. **Grafana metric-name suffixes** — nothing has pushed metrics to Grafana Cloud yet; see
-   [grafana/README.md](grafana/README.md) for what to check on the first armed run.
-4. **Explore's selectors will drift.** They are now correct against lucuma-apps `main` as of
-   the run above, but four of five were wrong on the first attempt — this is the part of the
+2. **Grafana** — nothing has pushed metrics or posted an annotation yet, because those
+   secrets are unset. See [grafana/README.md](grafana/README.md) for what to check on the
+   first run that has them; the metric-name suffixes are the likely snag.
+3. **A failing run.** Every CI run so far has been green, so the red paths — artifact upload,
+   the failure email, a threshold breach annotation — are untested end to end.
+4. **Explore's selectors will drift.** They are correct against lucuma-apps `main` as of the
+   runs above, but four of five were wrong on the first attempt — this is the part of the
    suite most likely to break, and why spec §10 asks lucuma-apps for `data-testid`. They are
    all in `tests/support/selectors.ts`.
 
