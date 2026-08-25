@@ -130,6 +130,11 @@ try {
     },
     body: JSON.stringify(annotation),
     signal: AbortSignal.timeout(20_000),
+    // Never follow a redirect on this POST. Per the Fetch spec a followed 301/302 downgrades
+    // POST to GET and drops the body — and `GET /api/annotations` is a valid request that
+    // returns 200 with a list, so the tool would report a successful annotation having
+    // created nothing. `http://` in GRAFANA_URL is enough to trigger it.
+    redirect: "manual",
   });
 } catch (error) {
   console.error(
@@ -158,6 +163,16 @@ if (!response.ok) {
         "that hostname is not a live one. Check GRAFANA_URL against the URL you actually open\n" +
         "Grafana with — it is the *stack* name, which is often not the organisation name:\n" +
         "  grafana.com → My Account → Stacks → your stack's Grafana URL",
+    );
+  }
+
+  if (response.status >= 300 && response.status < 400) {
+    console.error(
+      `\nThe endpoint redirected (Location: ${response.headers.get("location") ?? "not given"}),\n` +
+        "and this POST deliberately does not follow it: a followed redirect turns the POST into\n" +
+        "a GET, which succeeds against /api/annotations and would look like a created\n" +
+        "annotation while creating nothing.\n" +
+        "Almost always GRAFANA_URL uses http:// where it should use https://.",
     );
   }
 
@@ -196,4 +211,21 @@ if (!response.ok) {
   }
   process.exit(strict ? 1 : 0);
 }
+// A 2xx is not proof by itself. Grafana answers a *created* annotation with an object
+// ({id, message: "Annotation added"}); an array is the response to a GET listing them, which
+// is what arrives if this POST was ever turned into a GET. Belt to the redirect braces above.
+let created;
+try {
+  created = JSON.parse(body);
+} catch {
+  created = undefined;
+}
+if (Array.isArray(created)) {
+  console.error(
+    `annotation failed: HTTP ${response.status} returned a list, not a created annotation.\n` +
+      "Something turned this POST into a GET — check GRAFANA_URL for a redirecting host.",
+  );
+  process.exit(strict ? 1 : 0);
+}
+
 console.error(`annotated ${kind} for ${run.testid}: ${body.slice(0, 200)}`);
