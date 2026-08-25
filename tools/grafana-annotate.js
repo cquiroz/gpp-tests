@@ -71,8 +71,11 @@ switch (kind) {
     process.exit(2);
 }
 
-const url = process.env.GRAFANA_URL;
-const token = process.env.GRAFANA_ANNOTATIONS_TOKEN;
+// Trimmed, because these usually arrive from a CI secret and a trailing newline is easy to
+// introduce (`echo value | gh secret set …`). In a URL it produces an unparseable address; in
+// a bearer token, a 401. Neither error mentions whitespace.
+const url = process.env.GRAFANA_URL?.trim();
+const token = process.env.GRAFANA_ANNOTATIONS_TOKEN?.trim();
 
 const strict = args.has("strict");
 
@@ -81,6 +84,20 @@ if (!url || !token) {
     "GRAFANA_URL or GRAFANA_ANNOTATIONS_TOKEN not set — printing the annotation instead",
   );
   console.log(JSON.stringify(annotation, null, 2));
+  process.exit(strict ? 1 : 0);
+}
+
+// Checked before the request so the diagnosis names the variable. Left to fetch, the failure
+// reads "Failed to parse URL from ***/api/annotations" — and in CI the value is masked, so
+// there is nothing in the log to reason from.
+if (!/^https?:\/\/[^/]/.test(url)) {
+  console.error(
+    "GRAFANA_URL is not an absolute URL, so no request was attempted.\n" +
+      "It must include the scheme and be the stack root, e.g. https://myorg.grafana.net\n" +
+      "(no trailing path, no quotes). A value like `myorg.grafana.net` or one with a\n" +
+      "trailing newline fails here. Re-set it with:\n" +
+      "    gh secret set GRAFANA_URL --body 'https://myorg.grafana.net'",
+  );
   process.exit(strict ? 1 : 0);
 }
 
