@@ -182,9 +182,10 @@ Verified offline, before any of that:
 
 1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
    arming path and `release-loadtest.sh` have only been run against a mock or with `DRY_RUN=1`.
-2. **Grafana** — nothing has pushed metrics or posted an annotation yet, because those
-   secrets are unset. See [grafana/README.md](grafana/README.md) for what to check on the
-   first run that has them; the metric-name suffixes are the likely snag.
+2. **Grafana metrics.** Run annotations work — CI posts start and end annotations and Grafana
+   returns `{"id":…,"message":"Annotation added"}`. Metrics remote-write has still never run,
+   because it only happens on a load run; the metric-name suffixes are the likely snag there
+   (see [grafana/README.md](grafana/README.md)).
 3. **A failing run.** Every CI run so far has been green, so the red paths — artifact upload,
    the failure email, a threshold breach annotation — are untested end to end.
 4. **Explore's selectors will drift.** They are correct against lucuma-apps `main` as of the
