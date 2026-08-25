@@ -176,10 +176,11 @@ Verified offline, before any of that:
 
 ## Still untested against the real thing
 
-1. **A GitHub runner.** Everything above was run on macOS. The Linux specifics — passwordless
-   `sudo` for `/etc/hosts`, whether the four JVM services fit in a hosted runner's 16 GB, the
-   `grafana/setup-k6-action` step — have not been exercised. Trigger `regression.yml` by hand
-   before trusting the 07:00 UTC schedule.
+1. **A GitHub runner, past the image pull.** A first CI run got as far as the registry: cert
+   generation, the GPG keypair, the lucuma-apps clone and the `/etc/hosts` edit (passwordless
+   `sudo`) all work on Linux. Still unproven there: whether the four JVM services fit in a
+   hosted runner's memory, and the `grafana/setup-k6-action` step. Trigger `regression.yml` by
+   hand before trusting the 07:00 UTC schedule.
 2. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
    arming path and `release-loadtest.sh` have only been run against a mock or with `DRY_RUN=1`.
 3. **Grafana metric-name suffixes** — nothing has pushed metrics to Grafana Cloud yet; see
@@ -221,6 +222,15 @@ Each of these is a judgement call, not an oversight:
    chained journey from a fresh guest.
 
 ## Secrets
+
+`HEROKU_API_KEY` is the only one without which nothing runs — the lucuma service images exist
+solely in Heroku's private registry. Generate a **long-lived** token; `heroku auth:token`
+returns a session token that expires and will break CI a few days later:
+
+```bash
+heroku authorizations:create -d "gpp-tests CI"   # copy the Token field
+gh secret set HEROKU_API_KEY                     # or add it in Settings → Secrets
+```
 
 | Secret | Needed for |
 |---|---|

@@ -28,6 +28,19 @@ outputs:
 runs:
   using: composite
   steps:
+    # Checked before any work: a missing secret is the single most likely reason a first CI
+    # run fails, and without this the job spends half a minute generating keys before Docker
+    # reports it as `no basic auth credentials`.
+    - name: Check the registry credential is present
+      shell: bash
+      env:
+        HEROKU_API_KEY: ${{ inputs.heroku-api-key }}
+      run: |
+        if [[ -z "$HEROKU_API_KEY" ]]; then
+          echo "::error title=Missing HEROKU_API_KEY::The lucuma service images live only in Heroku's private registry. Add a repository secret named HEROKU_API_KEY (generate one with: heroku authorizations:create -d 'gpp-tests CI')."
+          exit 1
+        fi
+
     - name: Boot the stack
       shell: bash
       env:
