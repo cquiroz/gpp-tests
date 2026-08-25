@@ -188,15 +188,20 @@ if (!response.ok) {
     // token (what this API wants) and `glc_` is a Cloud Access Policy token (what people
     // reach for, because it is the one the metrics pipeline uses).
     const shape = token.startsWith("glsa_")
-      ? "a Grafana service-account token (glsa_…), which is the right kind — so the token is\n" +
-        "probably revoked, from a different stack, or its role lacks annotation write access"
+      ? "a Grafana service-account token (glsa_…) — the right kind, so it is probably revoked,\n" +
+        "from a different stack, or its role lacks annotation write access"
       : token.startsWith("glc_")
-        ? "a Grafana Cloud **Access Policy** token (glc_…). That is the metrics remote-write\n" +
-          "credential; the annotations API does not accept it"
-        : "of no recognised Grafana token shape (a service-account token starts with glsa_)";
+        ? "a Grafana Cloud Access Policy token (glc_…) — that is the metrics remote-write\n" +
+          "credential, which the annotations API does not accept"
+        : token.startsWith("eyJ")
+          ? "a legacy Grafana API key (the base64 eyJ… kind). Those were replaced by service\n" +
+            "accounts and current Grafana rejects them exactly like this"
+          : `no recognised Grafana token shape — ${token.length} characters, starting with\n` +
+            "neither glsa_ (service account) nor glc_ (Cloud Access Policy). Check that the\n" +
+            "secret holds the token itself and not, say, an instance ID or a username:password";
 
     console.error(
-      `\nThe token looks like ${shape}.\n\n` +
+      `\nThe token is ${shape}.\n\n` +
         "The annotations API belongs to the Grafana *instance*, so it needs a service-account\n" +
         "token created inside Grafana itself:\n" +
         "  1. open https://<org>.grafana.net\n" +
