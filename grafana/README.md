@@ -36,6 +36,41 @@ threshold breach — all tagged `odbattr`, the suite, the environment and the `t
 To slice metrics by run for a one-off investigation, run k6 with `K6_TAG_TESTID=true`; do not
 leave it on.
 
+## Finding the remote-write values
+
+Two of the three are already recorded in Grafana's own Prometheus datasource, so they can be
+read out rather than hunted for:
+
+```bash
+GRAFANA_URL=https://<stack>.grafana.net GRAFANA_ANNOTATIONS_TOKEN=glsa_... \
+  tools/find-grafana-credentials.sh
+```
+
+It prints the write URL and the instance ID. Manually, the same values are at
+grafana.com → your stack → **Prometheus** → **Details**: the *Remote Write Endpoint* and the
+numeric *Instance ID* (which is the username).
+
+The third, the token, cannot be read back from anywhere — tokens are shown once. Create one at
+grafana.com → your org → **Access Policies** → create a policy scoped `metrics:write` on this
+stack, then **Add token**.
+
+Note these are a *different* credential system from the annotations token, and the two are not
+interchangeable: remote write wants a Cloud **Access Policy** token (`glc_…`), the annotations
+API wants an instance **service-account** token (`glsa_…`). Swapping them yields a 401 either
+way.
+
+Then check them before anything depends on them:
+
+```bash
+tools/verify-metrics.sh
+```
+
+This exists because **k6 logs a rejected push and still exits 0** — the same shape as the
+annotation failures that took four CI runs to spot. The script pushes five seconds of metrics
+and fails if any were rejected, naming the likely cause. It also catches the two easy mistakes
+up front: using the query endpoint (`/api/prom`) where remote write needs `/api/prom/push`, and
+putting a token in the username field instead of the instance ID.
+
 ## Secrets the workflows expect
 
 | Secret | Used for |
