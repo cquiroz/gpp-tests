@@ -28,16 +28,47 @@ compose stack omits it. On a dyno it is mandatory.
 
 ## Cost
 
-Dynos sit at **zero** between runs and Heroku bills them by the second, so a nightly
-forty-minute run is roughly 20 dyno-hours a month rather than 720 — a few dollars rather than
-a few hundred. The addons cannot be paused, so they are the floor:
+Heroku prorates everything to the second and bills dynos on wall-clock time above zero, so
+scaling to zero between runs is what makes this affordable. Prices verified against
+heroku.com/pricing (2026-08); the monthly figure is 730 hours, so an hourly rate is
+`monthly ÷ 730`.
 
-- 2 × Postgres + 1 × Redis, billed continuously
-- 4 × `performance-m` dynos, billed for the duration of each run
+**Per run** — four `performance-m` dynos ($250/mo → $0.343/h) up for the 41-minute k6 profile
+plus a cold start and a few minutes of post-run bookkeeping, call it 50 minutes:
 
-Check nothing was left running: `heroku ps -a lucuma-postgres-odb-loadtest`. The workflow
-scales down under `if: always()`, and emits a `::warning::` if it could not — but a cancelled
-job in an unusual state is worth an occasional manual look.
+```
+4 dynos × 50 min = 3.3 dyno-hours × $0.343  ≈  $1.15
+```
+
+**Per month** — 30 nightly runs plus the addons, which cannot be paused and so set the floor:
+
+| | |
+|---|---|
+| dynos, 30 runs × ~$1.15 | ~$35 |
+| Postgres `essential-2` (ODB) | $20 |
+| Postgres `essential-0` (SSO) | $5 |
+| Key-Value `mini` (ITC) | $3 |
+| GitHub Actions (public repo) | $0 |
+| Grafana Cloud (free tier) | $0 |
+| **total** | **~$63/month** |
+
+Left permanently on, the same four dynos would be $1,000/month, so the scale-to-zero design
+accounts for roughly 95% of the saving — and the always-on addons are now the larger half of
+the bill.
+
+The estimate's weak point is the **cold start**, which has never been measured on a dyno: four
+JVM services booting plus the ODB migrating from empty against a network-attached Postgres.
+Every extra 10 minutes there adds ~$0.23 to a run and ~$7/month. The first run after
+provisioning will be the slowest.
+
+**The failure mode that costs real money** is a run that ends without scaling down — four
+`performance-m` dynos left up bill **~$33/day**. The workflow scales down under
+`if: always()` and emits a `::warning::` if the call fails, but it is worth an occasional
+look:
+
+```bash
+heroku ps -a lucuma-postgres-odb-loadtest    # expect "no dynos on ⬢ …"
+```
 
 ## Safety: how this is kept away from production
 
@@ -130,12 +161,21 @@ Then set the repository variables it prints, and the nightly workflow stops skip
 ### The connection pool matters
 
 If the ODB's pool can exceed what the Postgres plan allows, a 200-VU run measures connection
-exhaustion instead of the ODB. The default leaves margin for the obscalc process, which shares
-the same database. Check the real ceiling and raise it if there is room:
+exhaustion instead of the ODB. The subtlety is that the value is claimed **twice**: the `web`
+dyno and `obscalc` are separate processes on the same app, so they read the same config vars and
+each open their own pool against the same database.
+
+```
+ODB_MAX_CONNECTIONS ≈ (plan connection limit − 10) / 2
+```
+
+`essential-2` allows 40, so the default of 15 puts 30 in use and leaves ~10 for `pg:psql`,
+backups and Heroku's own maintenance. Setting it to 20 — half the limit, which looks right —
+would exhaust the database on the first run.
 
 ```bash
-heroku pg:info -a lucuma-postgres-odb-loadtest     # look at "Connections"
-heroku config:set ODB_MAX_CONNECTIONS=40 -a lucuma-postgres-odb-loadtest
+heroku pg:info -a lucuma-postgres-odb-loadtest     # confirm the "Connections" ceiling
+heroku config:set ODB_MAX_CONNECTIONS=20 -a lucuma-postgres-odb-loadtest   # only on a bigger plan
 ```
 
 Changing it changes what the numbers mean, so treat it as a baseline reset: the three nights

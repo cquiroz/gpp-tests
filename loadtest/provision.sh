@@ -44,10 +44,17 @@ ITC_REDIS_PLAN="${ITC_REDIS_PLAN:-heroku-redis:mini}"
 DYNO_SIZE="${DYNO_SIZE:-performance-m}"
 
 # The ODB's connection pool must stay under the Postgres plan's limit, or the run measures
-# connection exhaustion instead of the ODB. essential-2 allows more than this; the margin
-# leaves room for the obscalc process, which shares the same database. Check the real ceiling
-# with `heroku pg:info -a $ODB_APP` and raise this if there is headroom.
-ODB_MAX_CONNECTIONS="${ODB_MAX_CONNECTIONS:-25}"
+# connection exhaustion instead of the ODB.
+#
+# The arithmetic that matters: essential-2 allows 40 connections, and *two* processes share
+# that database — the web dyno and obscalc — reading the same config vars, so this value is
+# claimed twice. 15 each leaves 30 in use and ~10 spare for `pg:psql`, backups and Heroku's own
+# maintenance. Setting it to half the plan limit would exhaust the database on the first run.
+#
+#   ODB_MAX_CONNECTIONS ≈ (plan connection limit - 10) / 2
+#
+# Check the real ceiling with `heroku pg:info -a $ODB_APP` and raise this if the plan is bigger.
+ODB_MAX_CONNECTIONS="${ODB_MAX_CONNECTIONS:-15}"
 
 run() {
   if [[ -n "$APPLY" ]]; then
