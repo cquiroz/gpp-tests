@@ -142,7 +142,32 @@ try {
 const body = await response.text();
 if (!response.ok) {
   // Loud, but not fatal: losing an annotation should not turn a green run red.
-  console.error(`annotation failed: HTTP ${response.status} ${body.slice(0, 300)}`);
+  // Grafana's own errors are compact JSON and worth printing; an HTML body means a proxy or
+  // error page answered, and dumping it just buries the explanation below.
+  const isHtml = /^\s*<(!doctype|html)/i.test(body);
+  console.error(
+    `annotation failed: HTTP ${response.status}` +
+      (isHtml ? " (HTML error page, not a Grafana response)" : ` ${body.slice(0, 300)}`),
+  );
+  // grafana.net sits behind Cloudflare, which answers 530 (error 1016, "Origin DNS error")
+  // when the hostname is not a live stack. Nothing reached Grafana, so the token is not
+  // implicated — and neither status nor body says "that host does not exist".
+  if (response.status === 530 || body.includes("error code: 1016")) {
+    console.error(
+      "\nA 530 comes from Cloudflare, not Grafana: the request never reached a stack, because\n" +
+        "that hostname is not a live one. Check GRAFANA_URL against the URL you actually open\n" +
+        "Grafana with — it is the *stack* name, which is often not the organisation name:\n" +
+        "  grafana.com → My Account → Stacks → your stack's Grafana URL",
+    );
+  }
+
+  if (response.status === 404) {
+    console.error(
+      "\nA 404 usually means GRAFANA_URL carries a path. It must be the bare stack root, e.g.\n" +
+        "https://mystack.grafana.net — this tool appends /api/annotations itself.",
+    );
+  }
+
   if (response.status === 401 || response.status === 403) {
     // Classify by prefix without echoing the value: `glsa_` is an in-instance service-account
     // token (what this API wants) and `glc_` is a Cloud Access Policy token (what people
