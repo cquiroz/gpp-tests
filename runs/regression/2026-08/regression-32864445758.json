@@ -3,46 +3,46 @@
   "testid": "regression-32864445758",
   "suite": "regression",
   "environment": "ephemeral",
-  "startedAt": "2026-08-25T15:13:47.000Z",
-  "endedAt": "2026-08-25T15:16:49.589Z",
-  "durationSeconds": 182.589,
+  "startedAt": "2026-08-25T18:17:10.000Z",
+  "endedAt": "2026-08-25T18:19:53.689Z",
+  "durationSeconds": 163.689,
   "outcome": "pass",
   "thresholds": {
     "mode": "baseline",
     "breaches": []
   },
   "images": {
-    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:f77b83e1da28c45f680db74bf463b6ad8048bc3ef059f6b71941bd8792edc8a0",
-    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:0779007e46c502e93fa664afa954cc109296b8aa2003ea4efd9f418186c2116f",
-    "itc": "registry.heroku.com/itc-dev/web@sha256:a67f8ba7a10d79b2760b31402ae4f53f588559d3e4b3835fd4be49c8b5e77460",
-    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:7974e51f889de7453b337a914521c2e7ccb01b3d6dd7a1b34396ae3018870912"
+    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:c2cce610cf04780c1833a7a1e52b1542080d837bfc2c88b5a4f92b61e22be554",
+    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:ea7118132e55338f11b7eb7c4c7894b780644670e2ad538739be467093843734",
+    "itc": "registry.heroku.com/itc-dev/web@sha256:ff277e79bbd92c0dbf3cb42ff4072432a14c1abb4fbb4c322d96638b89631ee5",
+    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:24ae52cfffbd79475be821cdb15a56a67cae9b19063761a312e8b2a9e7ebde63"
   },
   "scenarios": [
     {
       "name": "scenario 1: login as guest",
       "status": "passed",
-      "durationSeconds": 14.919
+      "durationSeconds": 14.391
     },
     {
       "name": "scenario 2: create a program",
       "status": "passed",
-      "durationSeconds": 7.515
+      "durationSeconds": 6.722
     },
     {
       "name": "scenario 3: create an observation with a target and configuration",
       "status": "passed",
-      "durationSeconds": 12.815
+      "durationSeconds": 13.319
     },
     {
       "name": "scenario 4: edit the subtitle and read it back after a reload",
       "status": "passed",
-      "durationSeconds": 20.194
+      "durationSeconds": 16.722
     }
   ],
   "metrics": {
-    "readP95Ms": 248.453,
-    "writeP95Ms": 124.135,
-    "p95Ms": 221.332,
+    "readP95Ms": 264.828,
+    "writeP95Ms": 158.178,
+    "p95Ms": 255.512,
     "errorRate": 0,
     "iterations": 1,
     "httpReqs": 11
