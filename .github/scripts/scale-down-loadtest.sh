@@ -20,10 +20,21 @@ if [[ -z "${HEROKU_API_KEY:-}" ]]; then
   exit 0
 fi
 
+# Scaling an app to zero is an outage if the app is the wrong one, so the same rails apply
+# here as to the release. The guard exits non-zero on a violation, which is the one thing that
+# *should* fail this otherwise best-effort script: better a red run than a scaled-down
+# production service.
+# shellcheck source=../../loadtest/guard.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../loadtest/guard.sh"
+
 failed=()
 scale() {
   local app="$1"; shift
   if [[ -z "$app" ]]; then return 0; fi
+
+  assert_loadtest_name "$app"
+  assert_loadtest_marker "$app"
+
   log "scaling $app to zero"
   if ! heroku ps:scale "$@" --app "$app"; then
     failed+=("$app")

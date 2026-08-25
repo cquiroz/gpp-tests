@@ -39,6 +39,54 @@ Check nothing was left running: `heroku ps -a lucuma-postgres-odb-loadtest`. The
 scales down under `if: always()`, and emits a `::warning::` if it could not — but a cancelled
 job in an unusual state is worth an occasional manual look.
 
+## Safety: how this is kept away from production
+
+The same Heroku account owns the production GPP environment, and this tooling issues
+`pg:reset`, `container:release`, `ps:scale` and `config:set` against app names that come from
+environment variables. A single mistyped variable would otherwise be enough to wipe a
+production database. So every script sources [`guard.sh`](guard.sh), and no app is touched
+until it passes three independent checks:
+
+1. **The name must end in `-loadtest`.** Pattern check, no API call, so it also applies to dry
+   runs.
+2. **The name must not contain** `production`, `prod`, `staging`, `stage`, `-dev` or `master` —
+   whatever check 1 says. `-dev` is in the list because those apps are the image *source*: we
+   pull from them and must never push to them. This list is hardcoded and cannot be overridden
+   by an environment variable.
+3. **The app must carry `ODBATTR_LOADTEST=1`**, a config var `provision.sh` sets on apps it
+   creates itself. Production, staging and the `-dev` apps do not have it and never will — so
+   unlike the first two checks, this one cannot be satisfied by a typo at all.
+
+Checks are re-run immediately before the destructive operations rather than only once at
+startup, and every one of them fails closed: an unreachable API, an empty response or an
+unreadable app all count as "do not touch it". `provision.sh` additionally refuses to *adopt*
+an app that already exists without the marker, so a plausible-looking name that happens to
+belong to something real is rejected rather than reconfigured.
+
+Verified by [`guard.test.sh`](guard.test.sh) (18 cases, part of `npm run check`) and by
+pointing each script at production names against a stubbed CLI that records any mutation:
+every path refused, with zero mutations executed.
+
+### The one gap the code cannot close
+
+A Heroku API token carries whatever access its owner has, so a token belonging to someone with
+production admin can reach production regardless of what these scripts do. The rails above
+protect against mistakes in *this* tooling; they cannot protect against anything else that
+token is used for.
+
+If that matters — and with a production environment on the same account, it does — give CI its
+own Heroku identity with only:
+
+- **read** on `lucuma-postgres-odb-dev`, `lucuma-sso-dev`, `itc-dev` (to pull images)
+- **admin** on the three `-loadtest` apps
+
+and nothing else. In a Heroku Team that is a member with per-app collaborator access rather
+than team-wide rights. Then generate `HEROKU_API_KEY` as that user:
+
+```bash
+heroku authorizations:create -d 'gpp-tests CI'
+```
+
 ## Provisioning
 
 ```bash

@@ -92,6 +92,12 @@ if [[ -z "$APPLY" ]]; then
   warn "DRY RUN — nothing will be created. Re-run with --apply to go ahead."
 fi
 
+# This script writes config vars and rescales dynos on whatever app names it is handed, on an
+# account that also owns production. Check the names before anything else happens.
+# shellcheck source=guard.sh
+source "$(dirname "$0")/guard.sh"
+assert_all_loadtest_names "$ODB_APP" "$SSO_APP" "$ITC_APP"
+
 log "team          $TEAM"
 log "apps          $ODB_APP · $SSO_APP · $ITC_APP"
 log "dynos         $DYNO_SIZE (scaled to 0 between runs)"
@@ -106,9 +112,27 @@ log "postgres      odb=$ODB_PG_PLAN  sso=$SSO_PG_PLAN"
 log "apps"
 for app in "$ODB_APP" "$SSO_APP" "$ITC_APP"; do
   if app_exists "$app"; then
-    skip "$app exists"
+    # An app that already exists and is *not* marked was created by someone else. Adopting it
+    # would mean overwriting its config vars and rescaling its dynos — so refuse, rather than
+    # assume a name ending in -loadtest is ours. This is the check that catches a typo landing
+    # on a real app whose name happens to satisfy the pattern.
+    marker="$(config_value "$app" "$ODBATTR_MARKER_VAR")"
+    if [[ "$(printf '%s' "$marker" | tr -d '[:space:]')" == "$ODBATTR_MARKER_VALUE" ]]; then
+      skip "$app exists and is marked as ours"
+    elif [[ -z "$APPLY" ]]; then
+      warn "$app already exists and is not marked as a load-test app."
+      warn "With --apply this stops, rather than adopting an app it did not create."
+    else
+      guard_die "\"$app\" already exists but does not carry $ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE.
+    This tooling did not create it, so it will not write config or rescale dynos on it.
+    Either pick a different name, or — only if you are certain this app is yours to use:
+        heroku config:set $ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE -a $app"
+    fi
   else
     run heroku apps:create "$app" --team "$TEAM" --stack container
+    # Marked immediately, before any other configuration, so an interrupted provisioning run
+    # leaves an app the later steps still recognise as theirs.
+    set_config "$app" "$ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE"
   fi
 done
 

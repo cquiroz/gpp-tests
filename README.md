@@ -228,6 +228,20 @@ Each of these is a judgement call, not an oversight:
    gets per-scenario pass/fail and duration (which §7 needs). A retry still re-runs the whole
    chained journey from a fresh guest.
 
+## Production safety
+
+The load-test tooling resets databases, deploys images and rescales dynos on an account that
+also owns the production GPP environment. Every such operation is gated by
+[`loadtest/guard.sh`](loadtest/guard.sh): the app name must end in `-loadtest`, must not
+contain `production`/`staging`/`-dev`, and the app must carry an `ODBATTR_LOADTEST=1` config
+var that only `provision.sh` sets. All three fail closed, and the third cannot be satisfied by
+a typo. See [loadtest/README.md](loadtest/README.md#safety-how-this-is-kept-away-from-production)
+for the reasoning, the verification, and the one gap code cannot close (token scope).
+
+**The regression path never calls the Heroku CLI at all** — it does `docker login
+registry.heroku.com` and `compose pull`, both read-only against the `-dev` registry. Nothing in
+a regression run can modify any Heroku app.
+
 ## Secrets
 
 `HEROKU_API_KEY` is the only one without which nothing runs — the lucuma service images exist
