@@ -42,9 +42,40 @@ x-odb-env: &odb-env
   ODB_OTEL_KEY: ${ODB_OTEL_KEY:-}
   OTEL_RESOURCE_ATTRIBUTES: environment=${OTEL_ENVIRONMENT:-ephemeral},service.namespace=odbattr
 
+# Memory limits, and why they are not optional.
+#
+# The lucuma images size their JVM heap with -XX:MaxRAMPercentage=80. Without a container
+# limit, each JVM sees the *host's* total memory and concludes it may use 80% of all of it —
+# so four JVMs on one Docker VM each plan for the same memory, grow into it under load, and
+# the kernel SIGKILLs whichever is largest. That is invisible in a regression run, where a
+# single-user journey never allocates enough to collide, and fatal under load: a 25-VU run on
+# a 7.7 GiB Docker VM killed the ODB (exit 137, OOMKilled) about two thirds of the way through
+# and produced a 31% failure rate that looked like an application fault.
+#
+# With a limit, each JVM sizes its heap to 80% of *its own* budget. The same 25-VU run then
+# completed with no kills and 99.98% of checks passing, write p95 dropping from 6.7s to 969ms.
+#
+# These are minimums, not comfortable margins — measured utilisation at the end of that run:
+#
+#   odb      1.98 / 2.00 GiB   99%      obscalc  0.99 / 1.00 GiB   96%
+#   itc      0.79 / 1.00 GiB   78%      sso      0.54 / 0.75 GiB   70%
+#   postgres 0.58 / 1.00 GiB   57%      hasura   0.16 / 0.50 GiB   31%
+#
+# A JVM sitting at its ceiling is normal — it grows to MaxRAMPercentage and collects rather
+# than returning memory — but there is little room for non-heap growth, so raise them for
+# anything heavier than a smoke test:
+#
+#   ODB_MEM_LIMIT=4g OBSCALC_MEM_LIMIT=2g npm run stack:up
+#
+# The totals assume a ~8 GiB Docker VM. Check yours with `docker info` before raising several
+# at once; over-committing brings the kills back.
+#
+# Heroku is unaffected — one process per dyno, each with its own cgroup — but a single-host
+# AWS target would hit exactly this (see research/aws-load-target-options.md).
 services:
   postgres:
     image: postgres:15
+    mem_limit: ${PG_MEM_LIMIT:-1g}
     environment:
       POSTGRES_USER: ${PG_USER:-jimmy}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-banana}
@@ -77,6 +108,7 @@ services:
 
   sso:
     image: ${SSO_IMAGE:-registry.heroku.com/lucuma-sso-dev/web:latest}
+    mem_limit: ${SSO_MEM_LIMIT:-768m}
     # The image entrypoint is the service launcher and `serve` is its subcommand — the same
     # binary also provides `create-service-user`, which bootstrap runs one-off. Overridable in
     # case the deployed process type is invoked differently.
@@ -105,6 +137,7 @@ services:
 
   itc:
     image: ${ITC_IMAGE:-registry.heroku.com/itc-dev/web:latest}
+    mem_limit: ${ITC_MEM_LIMIT:-1g}
     depends_on:
       - sso
     environment:
@@ -118,6 +151,7 @@ services:
 
   odb:
     image: ${ODB_IMAGE:-registry.heroku.com/lucuma-postgres-odb-dev/web:latest}
+    mem_limit: ${ODB_MEM_LIMIT:-2g}
     command: ["${ODB_COMMAND:-serve}"]
     depends_on:
       postgres:
@@ -148,6 +182,7 @@ services:
   # "calculated results appear" assertion — the ITC/obscalc liveness check — never passes.
   obscalc:
     image: ${OBSCALC_IMAGE:-registry.heroku.com/lucuma-postgres-odb-dev/obscalc:latest}
+    mem_limit: ${OBSCALC_MEM_LIMIT:-1g}
     depends_on:
       # service_healthy, not service_started: obscalc queries ODB tables directly at boot and
       # exits 1 if they are not there yet ("Relation t_time_estimate does not exist"). The odb
@@ -167,6 +202,7 @@ services:
   # The cli-migrations image applies lucuma-apps' own migrations and metadata at startup.
   hasura:
     image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.44.0.cli-migrations-v3}
+    mem_limit: ${HASURA_MEM_LIMIT:-512m}
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,6 +232,7 @@ services:
   # own environments.conf.json served in front of it.
   caddy:
     image: ${CADDY_IMAGE:-caddy:2}
+    mem_limit: ${CADDY_MEM_LIMIT:-256m}
     depends_on:
       - odb
       - sso

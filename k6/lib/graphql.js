@@ -69,12 +69,19 @@ export function gql(session, operation, { scenario, measure = true, tolerate }) 
   });
 
   if (!ok) {
-    graphqlErrors.add(1, tags({ scenario, operation: operation.operationName }));
-    if (errors) {
-      console.warn(
-        `${operation.operationName}: ${JSON.stringify(errors).slice(0, 300)}`,
-      );
-    }
+    // The status carries the reason: a GraphQL rejection is 200-with-errors, an overloaded or
+    // dead service is 502/503, and 0 means the request never completed. Without it a failed
+    // check says only "something went wrong", which is what made a container being OOM-killed
+    // mid-run look like an application fault.
+    graphqlErrors.add(
+      1,
+      tags({
+        scenario,
+        operation: operation.operationName,
+        status: String(response.status),
+      }),
+    );
+    warnOnce(operation.operationName, response, errors);
   }
 
   if (measure) {
@@ -96,3 +103,28 @@ export function gql(session, operation, { scenario, measure = true, tolerate }) 
 
 /** Returned by {@link gql} when the query succeeded but the value is still being calculated. */
 export const PENDING = { pending: true };
+
+/**
+ * One log line per distinct (operation, status) a VU sees, rather than per failure.
+ *
+ * A bad run produces thousands of identical failures — the 25-VU run that uncovered this had
+ * 1,763 — and logging each buries the summary under noise while telling you nothing the first
+ * line did not. Module scope is per-VU, so a 200-VU run still yields a handful of lines.
+ *
+ * @param {string} operationName
+ * @param {any} response
+ * @param {any[]|undefined} errors
+ */
+function warnOnce(operationName, response, errors) {
+  const key = `${operationName}:${response.status}`;
+  if (seenFailures[key]) return;
+  seenFailures[key] = true;
+
+  const detail = errors
+    ? JSON.stringify(errors).slice(0, 300)
+    : String(response.body || response.error || "no body").slice(0, 200);
+  console.warn(`${operationName} failed: HTTP ${response.status} — ${detail}`);
+}
+
+/** @type {Record<string, boolean>} */
+const seenFailures = {};
