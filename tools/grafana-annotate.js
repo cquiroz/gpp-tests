@@ -13,6 +13,9 @@
  * Needs GRAFANA_URL (e.g. https://myorg.grafana.net) and GRAFANA_ANNOTATIONS_TOKEN. Without
  * them it prints the payload and exits 0 — annotations are observability, not a gate, and a
  * missing token must not fail a run that otherwise passed.
+ *
+ * Pass `--strict` to invert that for a one-off check: missing credentials or a rejected POST
+ * then exit non-zero. Use it to confirm the credentials work; never in the workflows.
  */
 import {
   breachAnnotation,
@@ -71,28 +74,50 @@ switch (kind) {
 const url = process.env.GRAFANA_URL;
 const token = process.env.GRAFANA_ANNOTATIONS_TOKEN;
 
+const strict = args.has("strict");
+
 if (!url || !token) {
   console.error(
     "GRAFANA_URL or GRAFANA_ANNOTATIONS_TOKEN not set — printing the annotation instead",
   );
   console.log(JSON.stringify(annotation, null, 2));
-  process.exit(0);
+  process.exit(strict ? 1 : 0);
 }
 
-const response = await fetch(`${url.replace(/\/+$/, "")}/api/annotations`, {
-  method: "POST",
-  headers: {
-    "content-type": "application/json",
-    authorization: `Bearer ${token}`,
-  },
-  body: JSON.stringify(annotation),
-  signal: AbortSignal.timeout(20_000),
-});
+// A DNS failure, TLS error or timeout must land in the same graceful path as an HTTP error —
+// a Grafana outage should cost a run its annotation, not produce a stack trace.
+let response;
+try {
+  response = await fetch(`${url.replace(/\/+$/, "")}/api/annotations`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(annotation),
+    signal: AbortSignal.timeout(20_000),
+  });
+} catch (error) {
+  console.error(
+    `annotation failed: could not reach ${url} ` +
+      `(${error instanceof Error ? error.message : error})`,
+  );
+  process.exit(strict ? 1 : 0);
+}
 
 const body = await response.text();
 if (!response.ok) {
   // Loud, but not fatal: losing an annotation should not turn a green run red.
   console.error(`annotation failed: HTTP ${response.status} ${body.slice(0, 300)}`);
-  process.exit(0);
+  if (response.status === 401 || response.status === 403) {
+    console.error(
+      "\nA 401/403 here is almost always the wrong kind of token. The annotations API belongs\n" +
+        "to the Grafana *instance*, so it needs a service-account token created inside Grafana\n" +
+        "(Administration → Users and access → Service accounts, role Editor or above).\n" +
+        "A Grafana Cloud Access Policy token — the kind used for metrics remote-write — is\n" +
+        "rejected here.",
+    );
+  }
+  process.exit(strict ? 1 : 0);
 }
 console.error(`annotated ${kind} for ${run.testid}: ${body.slice(0, 200)}`);
