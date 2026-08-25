@@ -71,11 +71,28 @@ switch (kind) {
     process.exit(2);
 }
 
-// Trimmed, because these usually arrive from a CI secret and a trailing newline is easy to
-// introduce (`echo value | gh secret set …`). In a URL it produces an unparseable address; in
-// a bearer token, a 401. Neither error mentions whitespace.
-const url = process.env.GRAFANA_URL?.trim();
-const token = process.env.GRAFANA_ANNOTATIONS_TOKEN?.trim();
+/**
+ * Secrets arrive as text someone pasted, so tolerate the usual damage: a trailing newline
+ * from `echo … | gh secret set`, quotes copied along with the value, or line breaks from a
+ * wrapped paste. Untreated, each shows up as an unparseable URL or a flat 401 — errors that
+ * never mention whitespace, and whose values are masked in CI logs.
+ *
+ * @param {string|undefined} value
+ * @param {{stripAllWhitespace?: boolean}} [opts]
+ */
+function cleanSecret(value, opts = {}) {
+  let v = (value ?? "").trim();
+  // Quotes are never part of a URL or a token, but they are easy to paste.
+  v = v.replace(/^(['"])(.*)\1$/s, "$2").trim();
+  // Grafana tokens contain no whitespace at all, so internal breaks are paste damage.
+  if (opts.stripAllWhitespace) v = v.replace(/\s+/g, "");
+  return v;
+}
+
+const url = cleanSecret(process.env.GRAFANA_URL);
+const token = cleanSecret(process.env.GRAFANA_ANNOTATIONS_TOKEN, {
+  stripAllWhitespace: true,
+});
 
 const strict = args.has("strict");
 
@@ -127,12 +144,29 @@ if (!response.ok) {
   // Loud, but not fatal: losing an annotation should not turn a green run red.
   console.error(`annotation failed: HTTP ${response.status} ${body.slice(0, 300)}`);
   if (response.status === 401 || response.status === 403) {
+    // Classify by prefix without echoing the value: `glsa_` is an in-instance service-account
+    // token (what this API wants) and `glc_` is a Cloud Access Policy token (what people
+    // reach for, because it is the one the metrics pipeline uses).
+    const shape = token.startsWith("glsa_")
+      ? "a Grafana service-account token (glsa_…), which is the right kind — so the token is\n" +
+        "probably revoked, from a different stack, or its role lacks annotation write access"
+      : token.startsWith("glc_")
+        ? "a Grafana Cloud **Access Policy** token (glc_…). That is the metrics remote-write\n" +
+          "credential; the annotations API does not accept it"
+        : "of no recognised Grafana token shape (a service-account token starts with glsa_)";
+
     console.error(
-      "\nA 401/403 here is almost always the wrong kind of token. The annotations API belongs\n" +
-        "to the Grafana *instance*, so it needs a service-account token created inside Grafana\n" +
-        "(Administration → Users and access → Service accounts, role Editor or above).\n" +
-        "A Grafana Cloud Access Policy token — the kind used for metrics remote-write — is\n" +
-        "rejected here.",
+      `\nThe token looks like ${shape}.\n\n` +
+        "The annotations API belongs to the Grafana *instance*, so it needs a service-account\n" +
+        "token created inside Grafana itself:\n" +
+        "  1. open https://<org>.grafana.net\n" +
+        "  2. Administration → Users and access → Service accounts → Add service account\n" +
+        "  3. role Editor (or Admin), then Add service account token\n" +
+        "  4. gh secret set GRAFANA_ANNOTATIONS_TOKEN --body 'glsa_...'\n\n" +
+        "Check one before setting it:\n" +
+        "  curl -s -o /dev/null -w '%{http_code}\\n' \\\n" +
+        "    -H \"Authorization: Bearer $TOKEN\" \"$GRAFANA_URL/api/annotations?limit=1\"\n" +
+        "200 means it works; 401 means it is the wrong kind.",
     );
   }
   process.exit(strict ? 1 : 0);
