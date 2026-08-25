@@ -186,10 +186,12 @@ Verified offline, before any of that:
 1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
    arming path, `provision.sh` and `release-loadtest.sh` have only been exercised as dry runs
    or against a stubbed `heroku` CLI. The 200-VU profile has never run against Heroku dynos.
-2. **Grafana metrics.** Run annotations work — CI posts start and end annotations and Grafana
-   returns `{"id":…,"message":"Annotation added"}`. Metrics remote-write has still never run,
-   because it only happens on a load run; the metric-name suffixes are the likely snag there
-   (see [grafana/README.md](grafana/README.md)).
+2. **The dashboard's metric names.** Run annotations work, and the remote-write credentials are
+   verified — `tools/verify-metrics.sh` pushes `k6_gpp_verify_*` and Grafana accepts it. What is
+   still unproven is that the **GPP test results** panels resolve, because that needs the load
+   suite's own series (`k6_odb_read_duration_p95` and friends), and the suffixes have moved
+   between k6 versions. A local load run with remote-write enabled settles it for free — see
+   [grafana/README.md](grafana/README.md).
 3. **A failing run.** Every CI run so far has been green, so the red paths — artifact upload,
    the failure email, a threshold breach annotation — are untested end to end.
 4. **Explore's selectors will drift.** They are correct against lucuma-apps `main` as of the
