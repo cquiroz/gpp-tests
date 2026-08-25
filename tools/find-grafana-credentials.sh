@@ -44,15 +44,30 @@ if [[ "$count" == "0" ]]; then
   die "no Prometheus datasource found on this stack."
 fi
 
+# The basic-auth username has lived under different keys across Grafana versions — `user` in
+# current releases, `basicAuthUser` in older ones — and provisioned Cloud datasources sometimes
+# record it in neither. Check each, then fall back to showing what is actually there.
 printf '%s' "$body" | jq -r '
   .[] | select(.type == "prometheus") |
-  "\n  name          \(.name)\n  query URL     \(.url)\n  instance ID   \(.basicAuthUser // "not set on this datasource")"
+  "\n  name          \(.name)\n  query URL     \(.url)\n  user          \(.user // "—")\n  basicAuthUser \(.basicAuthUser // "—")\n  basicAuth     \(.basicAuth // false)"
 ' >&2
 
 # Grafana Cloud's query endpoint ends in /api/prom; remote write is the same host with /push.
 query_url="$(printf '%s' "$body" | jq -r '[.[] | select(.type == "prometheus")][0].url')"
-instance_id="$(printf '%s' "$body" | jq -r '[.[] | select(.type == "prometheus")][0].basicAuthUser // ""')"
+instance_id="$(printf '%s' "$body" | jq -r '
+  [.[] | select(.type == "prometheus")][0]
+  | (.user // .basicAuthUser // .jsonData.httpHeaderName1 // "")
+  | tostring | select(test("^[0-9]+$")) // ""
+')"
 write_url="${query_url%/}/push"
+
+# The instance ID is also embedded in the hostname's stack number on some tenants, but that is
+# not the same number — do not guess it. If it is not recorded, say where it is.
+if [[ -z "$instance_id" ]]; then
+  log "the instance ID is not recorded on the datasource — printing its non-secret fields"
+  printf '%s' "$body" | jq '[.[] | select(.type == "prometheus")][0]
+    | del(.secureJsonFields, .secureJsonData, .password, .basicAuthPassword)' >&2
+fi
 
 cat >&2 <<EOF
 
@@ -73,6 +88,17 @@ Check it works before anything depends on it:
 EOF
 
 if [[ -z "$instance_id" ]]; then
-  die "the datasource has no basicAuthUser, so the instance ID is not recorded there.
-    Find it at grafana.com → your stack → Prometheus → Details (\"User\" / instance ID)."
+  die "the instance ID is not recorded on the datasource (Grafana Cloud provisions these
+    without it), so it has to come from the portal — 30 seconds:
+
+        1. grafana.com  →  sign in
+        2. your org  →  the stack this URL belongs to
+        3. the Prometheus tile  →  \"Send Metrics\" / \"Details\"
+        4. copy the value labelled \"Username / Instance ID\" — a number
+
+    The remote-write URL shown there should match the one above:
+        $write_url
+
+    The datasource fields printed above are everything this API exposes; if one of them holds
+    the number, it can be used directly."
 fi
