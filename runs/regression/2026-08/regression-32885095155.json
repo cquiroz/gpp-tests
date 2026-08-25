@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "testid": "regression-32885095155",
+  "suite": "regression",
+  "environment": "ephemeral",
+  "startedAt": "2026-08-25T18:40:23.000Z",
+  "endedAt": "2026-08-25T18:43:12.492Z",
+  "durationSeconds": 169.492,
+  "outcome": "pass",
+  "thresholds": {
+    "mode": "baseline",
+    "breaches": []
+  },
+  "images": {
+    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:7af80a92a9f183bebed3e0ae40b16bbb7f43887654f1d1cb0b28dd920273d45d",
+    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:213a4ba78801331ca4400ba455c2a3ed27f5414fff4427bd17123e9ee9d1bc9e",
+    "itc": "registry.heroku.com/itc-dev/web@sha256:537f78b691eb3263b62ba9ca953ed7328ae7623a64bc0cd8429f5826a3bedca5",
+    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:076b4d299fe7ed350bcec862db0a4ede91a1482ba9801f0f5b25ccef83d2eeb6"
+  },
+  "scenarios": [
+    {
+      "name": "scenario 1: login as guest",
+      "status": "passed",
+      "durationSeconds": 15.004
+    },
+    {
+      "name": "scenario 2: create a program",
+      "status": "passed",
+      "durationSeconds": 7.355
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration",
+      "status": "passed",
+      "durationSeconds": 12.762
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload",
+      "status": "passed",
+      "durationSeconds": 22.432
+    }
+  ],
+  "metrics": {
+    "readP95Ms": 248.661,
+    "writeP95Ms": 133.624,
+    "p95Ms": 226.514,
+    "errorRate": 0,
+    "iterations": 1,
+    "httpReqs": 11
+  },
+  "runUrl": "https://github.com/cquiroz/gpp-tests/actions/runs/32885095155"
+}
