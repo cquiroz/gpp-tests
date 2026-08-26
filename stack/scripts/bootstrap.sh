@@ -179,6 +179,11 @@ bash "$STACK_DIR/scripts/wait-for-ready.sh"
 bash "$STACK_DIR/scripts/trust-ca.sh" >/dev/null
 bash "$STACK_DIR/scripts/record-images.sh" "$REPO_DIR/out/images.json"
 
+# Standard test users (tiers 2-3 of research/orcid-auth-testing-strategy.md). Without them
+# the [pi]/[staff] journeys and the session-injection smoke test skip; the tests read
+# stack/.env.standard-users straight from disk, so nothing needs to source it.
+bash "$STACK_DIR/scripts/create-standard-users.sh"
+
 log "stack is up:"
 log "  Explore  https://explore.$GPP_TEST_DOMAIN"
 log "  ODB      https://odb.$GPP_TEST_DOMAIN/odb"
