@@ -2,6 +2,7 @@
 // environment so the same scripts point at the ephemeral stack (regression) or the
 // persistent load target (nightly load run) — spec §3 and §6.
 import { stackEndpoints } from "../../lib/endpoints.js";
+import { assertTargets } from "../../lib/load-target.js";
 import { ENVIRONMENT_OF, testId } from "../../lib/run-identity.js";
 
 export const SUITE = __ENV.SUITE === "load" ? "load" : "regression";
@@ -9,6 +10,13 @@ export const ENVIRONMENT = __ENV.OTEL_ENVIRONMENT || ENVIRONMENT_OF[SUITE];
 export const TESTID = testId({ suite: SUITE, runId: __ENV.GITHUB_RUN_ID });
 
 export const endpoints = stackEndpoints(__ENV);
+
+// Refuse to send traffic anywhere but a load-test host or the local ephemeral stack. This is
+// the traffic-plane rail, and it runs at init so no VU ever starts against the wrong target:
+// loadtest/guard.sh protects the apps this tooling manages, and the target host — a
+// repository variable on the nightly run — is the one path to a shared environment it cannot
+// see. The load profile writes as well as reads, so a wrong host would seed data there.
+assertTargets(endpoints, __ENV);
 
 // The ephemeral stack fronts everything with Caddy's internal CA, which k6 is not asked to
 // trust (spec §3). Set K6_INSECURE_SKIP_TLS_VERIFY=false against a real-certificate target.

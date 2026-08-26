@@ -70,6 +70,14 @@ jobs:
       - run: npm ci
         if: steps.preflight.outputs.ready == 'true'
 
+      # Before anything destructive: the guard rails cover the apps this tooling manages, not
+      # the host it aims 200 VUs and 40% writes at. That host is a repository variable, so it
+      # is checked here — after npm ci, before the release resets a database — and again by
+      # k6 at init. A wrong value fails the run rather than seeding another environment.
+      - name: Verify the k6 target is a load-test host
+        if: steps.preflight.outputs.ready == 'true'
+        run: node tools/check-load-target.js
+
       - name: Record the run start
         if: steps.preflight.outputs.ready == 'true'
         id: run

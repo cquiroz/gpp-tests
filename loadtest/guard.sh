@@ -17,6 +17,11 @@
 #
 # Every check fails closed: an unreachable API, an empty response or an unreadable app all
 # count as "do not touch it".
+#
+# This file guards the *control plane* — the apps this tooling mutates. It cannot see where the
+# load is *sent*: that target is a URL rather than an app name, and it is guarded on the JS side
+# by lib/load-target.js (enforced in k6/lib/config.js at init, and by tools/check-load-target.js
+# before performance.yml releases anything). Both halves are needed; neither substitutes.
 
 # Set on every app by loadtest/provision.sh. Production, staging and the -dev apps do not have
 # it and never will, which is what makes it a reliable discriminator rather than a convention.

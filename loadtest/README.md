@@ -98,6 +98,36 @@ Verified by [`guard.test.sh`](guard.test.sh) (18 cases, part of `npm run check`)
 pointing each script at production names against a stubbed CLI that records any mutation:
 every path refused, with zero mutations executed.
 
+### The traffic plane: where the load is *sent*
+
+The three checks above cover the apps this tooling mutates. They say nothing about the host k6
+aims at, which arrives as `ODB_GRAPHQL_URL` / `SSO_URL` — repository variables that nothing used
+to validate. Because the profile writes as well as reads (60/40, 200 VUs, a 20-minute hold), a
+wrong value there would have seeded programs, observations and targets into whatever environment
+it named.
+
+[`lib/load-target.js`](../lib/load-target.js) closes that. A suite may target a host carrying a
+`loadtest` label, or the local ephemeral stack (`*.internal`, `localhost`), and nothing else —
+with the same protected-substring list as above, and the same fail-closed treatment of a URL it
+cannot parse. It is enforced in two places:
+
+- **`k6/lib/config.js`, at init** — so no VU can start against the wrong host by any route,
+  including a hand-run `npm run k6:load`. Verified: k6 aborts before the first request.
+- **`tools/check-load-target.js`, in `performance.yml` before the release step** — so a
+  misconfigured night fails immediately instead of first resetting a database, deploying images
+  and scaling four dynos up, then discovering the problem twenty minutes later.
+
+Which of the two rules does the work is worth knowing: real production hostnames need not
+contain "production", so it is the *positive* requirement — the host must identify itself as a
+load-test host — that actually keeps traffic off production; the protected list is the second
+line. Set `LOADTEST_HOST_PATTERN` when a target genuinely has no such label (a bare EC2 DNS
+name, say); the protected list still applies, and a malformed pattern refuses rather than
+allows. 18 cases in [`lib/load-target.test.js`](../lib/load-target.test.js).
+
+This rail is also the portable one: it matches on hostnames, not Heroku app names, so it guards
+an EC2 instance or an ALB unchanged — see
+[the AWS design note](../research/aws-load-target-options.md).
+
 ### The one gap the code cannot close
 
 A Heroku API token carries whatever access its owner has, so a token belonging to someone with

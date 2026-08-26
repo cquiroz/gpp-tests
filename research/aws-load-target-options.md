@@ -53,6 +53,7 @@ That is the whole integration surface. Unchanged on AWS:
 | `tools/` | ledger, thresholds, run summaries, Grafana annotations, operation verification |
 | `grafana/` | dashboard and annotation queries — `environment` already distinguishes targets |
 | `schema/` | vendored ODB schema |
+| `lib/load-target.js` | the target-host rail — it matches hostnames, not Heroku app names, so it guards an EC2 instance or an ALB unchanged |
 
 `lib/endpoints.js` also supports `GPP_TEST_SCHEME=http`, so a plain-HTTP target works — with one
 caveat in §3.
@@ -171,6 +172,11 @@ the same Heroku target, once from the hosted runner and once from a larger runne
 the numbers differ materially, the generator is already in the way.
 
 ## 7. Safety must be rebuilt, not skipped
+
+One half of it already moved: the target-host rail (`lib/load-target.js`, §1) is hostname-based
+and guards an AWS target with no changes — so the "200 VUs at the wrong host" hazard, which AWS
+does *not* remove on its own, is covered wherever the target lives. What follows is about the
+control plane, which is entirely Heroku-shaped today.
 
 `loadtest/guard.sh` exists because this tooling resets databases and rescales services on an
 account that also owns production, and one mistyped variable would have been enough. AWS has the

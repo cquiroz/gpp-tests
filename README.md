@@ -257,6 +257,14 @@ var that only `provision.sh` sets. All three fail closed, and the third cannot b
 a typo. See [loadtest/README.md](loadtest/README.md#safety-how-this-is-kept-away-from-production)
 for the reasoning, the verification, and the one gap code cannot close (token scope).
 
+Separately, **the host k6 sends load at is checked too** ([`lib/load-target.js`](lib/load-target.js)):
+a target must carry a `loadtest` label or be the local ephemeral stack, or the run refuses. The
+guard above protects the apps this tooling *manages*; this one protects whatever it *hammers*,
+which is a different thing — the load profile writes as well as reads, so a mistyped
+`LOADTEST_ODB_GRAPHQL_URL` would have seeded data into the environment it named. It is enforced
+by k6 itself at init and by `performance.yml` before the release step, and because it matches on
+hostnames rather than app names it is the one rail that moves to AWS unchanged.
+
 **The regression path never calls the Heroku CLI at all** — it does `docker login
 registry.heroku.com` and `compose pull`, both read-only against the `-dev` registry. Nothing in
 a regression run can modify any Heroku app.
