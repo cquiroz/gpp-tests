@@ -13,7 +13,7 @@ reorder from real usage knowledge.
 
 | Area | What it includes | Status | Where | Priority |
 |---|---|---|---|---|
-| Session & login | Guest login, logged-in shell renders, logout, recent programs | covered (guest path) | `journey.spec.ts` scenario 1 | P0 |
+| Session & login | Guest login, injected standard sessions (pi/staff), logged-in shell renders | covered | `journey.spec.ts`, `journey-pi.spec.ts`, `journey-staff.spec.ts`, `standard-user.spec.ts` | P0 |
 | Program management | Create, select, list in Proposals & Programs dialog | covered | `journey.spec.ts` scenario 2 | P0 |
 | Program details | Name/subtitle edits, notes, program-level views | partial (subtitle edit only) | `journey.spec.ts` scenario 4 | P1 |
 | Observations: lifecycle | Create, clone, delete, activate/deactivate | partial (create only) | `journey.spec.ts` scenario 3 | P0 |

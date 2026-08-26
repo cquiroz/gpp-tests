@@ -23,6 +23,13 @@ export const obsTreeAddObservationButton = (page: Page): Locator =>
   page.getByRole("button", { name: /^obs$/i });
 
 /**
+ * The signed-in identity shown in the toolbar — "Guest User" for guests, the ORCID
+ * given/family name for standard users (fabricated ones included).
+ */
+export const toolbarUserLabel = (page: Page, name: RegExp): Locator =>
+  page.getByRole("toolbar").getByText(name);
+
+/**
  * The toolbar menu holding "Manage Programs".
  *
  * It is an icon button with no accessible name — no text, no title, no aria-label — so it can
