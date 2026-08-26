@@ -1,8 +1,12 @@
 # Fabricating standard SSO users without ORCID
 
-**Written:** 2026-08-25. **Status:** research complete — all three gating items from
-[`orcid-auth-testing-strategy.md`](orcid-auth-testing-strategy.md) §"open work item" traced
-to source. Unblocks tiers 2 and 3 of that note's ladder. Grounding is primary source only:
+**Written:** 2026-08-25. **Status:** implemented and verified — the recipe below is
+[`stack/scripts/create-standard-users.sh`](../stack/scripts/create-standard-users.sh), run
+against a live stack the same day: the fabricated PI's JWT was accepted by the ODB
+(`createProgram` succeeded, role honored), the fabricated session's cookie got a 200 + JWT
+from `POST /api/v1/refresh-token`, and re-running reused the same rows. All three gating
+items from [`orcid-auth-testing-strategy.md`](orcid-auth-testing-strategy.md) §"open work
+item" traced to source. Unblocks tiers 2 and 3 of that note's ladder. Grounding is primary source only:
 the Scala and SQL of `gemini-hlsw/lucuma-odb` at commit
 [`62e6989`](https://github.com/gemini-hlsw/lucuma-odb/tree/62e69890b6c6d60c0eb9f7e4ed441af91c6e2a5a)
 (SSO now lives in `modules/sso-service` + `modules/sso-backend-client` +
