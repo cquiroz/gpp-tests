@@ -56,7 +56,11 @@ line: we test GPP, not ORCID — SSO's OAuth integration is tested where it live
 
 ## The open work item (gates tiers 2–3)
 
-Trace in lucuma-odb `modules/sso-service`:
+**Done — see [`sso-standard-user-fabrication.md`](sso-standard-user-fabrication.md)** (traced
+2026-08-25 at lucuma-odb `62e6989`): all three items below confirmed, refresh tokens turn out
+to be stored unhashed so session fabrication is a one-line INSERT, and the tier-4 precondition
+resolved pessimistically (`OrcidConfig` hardcodes the ORCID host — mock ORCID stays on hold).
+What was traced:
 
 1. The user/role tables and the SQL to fabricate a standard user with a given role
    (research already flags this untraced: `lucuma-deployment-shapes.md` open question 3).
