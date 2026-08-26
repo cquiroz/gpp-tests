@@ -31,11 +31,12 @@ test("a fabricated standard PI drives Explore via cookie injection", async ({
 
   await test.step("the injected cookie is a login: no dialog, shell renders", async () => {
     await page.goto("/");
-    // Unlike a first guest login there is no auto-created-and-selected program here, so the
-    // obs tree may not exist yet — a standard user with no selection lands on the program
-    // picker. The toolbar identity label is the "logged-in shell rendered" proof instead,
-    // and it still requires both websockets: Explore renders nothing past the spinner
-    // without them.
+    // The toolbar identity label, rather than either landing, is the "logged-in shell
+    // rendered" proof here: which landing a standard user gets is a property of what the ODB
+    // holds and not of the kind of user (see ui.loggedInLanding) — this PI is routed to a
+    // program Explore auto-creates for them, while a staff user, who can see every program,
+    // gets the Proposals & Programs picker. The label still requires both websockets:
+    // Explore renders nothing past the spinner without them.
     await expect(ui.toolbarUserLabel(page, /test\s+pi/i)).toBeVisible({
       timeout: 120_000,
     });

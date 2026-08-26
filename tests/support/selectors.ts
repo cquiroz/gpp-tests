@@ -49,6 +49,20 @@ export const programsDialog = (page: Page): Locator =>
   page.getByRole("dialog", { name: /proposals\s*&\s*programs/i });
 
 /**
+ * Either shell Explore can land on after login, as one locator.
+ *
+ * With no program id in the URL, Explore branches on what the user can see (lucuma-apps
+ * `explore/app/.../ExploreLayout.scala`, the `optProgramId.fold` case): a user who can see
+ * *no* programs gets one auto-created and is routed to it — the obs tree — while a user who
+ * can see some gets the Proposals & Programs popup. Which branch an identity takes is a
+ * property of the ODB's contents, not of the kind of user, so any wait for "the shell is
+ * up" has to accept both. Both are past the spinner, and Explore renders nothing past it
+ * until the ODB *and* prefs websockets connect, so either branch proves the whole stack.
+ */
+export const loggedInLanding = (page: Page): Locator =>
+  programsDialog(page).or(obsTreeAddObservationButton(page)).first();
+
+/**
  * Footer button of that dialog. Labelled "Proposal", but it calls `createProgram` with
  * SET = null and attaches no proposal (research §1).
  */

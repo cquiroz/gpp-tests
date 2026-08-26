@@ -129,7 +129,7 @@ Desktop, images pulled from Heroku's registry):
   assertion that proves ITC and obscalc are alive.
 - `k6 run k6/regression.js` → all checks pass, zero GraphQL errors.
 
-Five bugs that only a real boot could expose, all fixed:
+Six bugs that only a real boot could expose, all fixed:
 
 1. **Hasura refused to start.** `HASURA_GRAPHQL_UNAUTHORIZED_ROLE` requires an admin secret;
    with none set, Hasura is already fully open, which is what Explore needs. Setting it was
@@ -150,6 +150,19 @@ Five bugs that only a real boot could expose, all fixed:
    and until it lands the ODB answers with a `sequence_unavailable` *error*, not a null. Both
    the k6 suites and `verify-operations` treated that as a failure; it would also have pushed
    the nightly load run below its check-rate floor.
+
+6. **The `[pi]` journey waited for a dialog Explore had no reason to show.** With no program
+   id in the URL, Explore branches on what the user can *see*: a user who can see no programs
+   gets one auto-created and is routed to it, and only a user who can see some gets the
+   Proposals & Programs popup (`ExploreLayout.scala`). A freshly fabricated PI owns nothing, so
+   it took the first branch and the popup never appeared. The retry then passed — because the
+   failed attempt had left the PI owning the program Explore made for them — so the run stayed
+   green and reported flaky, and `staff` hid the bug entirely by seeing every program in the
+   ODB. Two CI runs failed identically before this was understood. Scenario 2 now opens the
+   dialog itself from whichever landing it finds (the toolbar's "Manage Programs" item is gated
+   on a program being selected, not on the kind of user), and takes its "which program did I
+   create" baseline with the dialog open rather than at login, where it raced that same
+   auto-creation.
 
 Four of the five Explore selectors also turned out to be wrong, now corrected against the
 running app: the toolbar menu has no accessible name (it is the last toolbar button), the
@@ -229,6 +242,10 @@ Each of these is a judgement call, not an oversight:
 7. **The journey is four tests in a serial block**, not one test with four steps, so the ledger
    gets per-scenario pass/fail and duration (which §7 needs). A retry still re-runs the whole
    chained journey from a fresh guest.
+8. **Playwright artifacts are uploaded on a retried pass as well as on a failure**, where §8
+   says failure only. A flaky run is the case where the trace is the *only* evidence — the run
+   stays green, so `failure()` never fires and the artifacts are discarded. Bug 6 above cost
+   two CI runs and a source read for want of one screenshot.
 
 ## Production safety
 

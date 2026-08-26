@@ -68,6 +68,21 @@ jobs:
           source stack/.env.generated
           npm run e2e
 
+      # A retried pass is a real signal (spec §5) — and it is exactly the case where the trace
+      # and the screenshot are the only evidence, because the run stays green and `failure()`
+      # never fires. Two flaky-but-green runs of the [pi] journey had to be diagnosed from
+      # Explore's source for want of one screenshot; flag it here so the upload step can see it.
+      - name: Did the journey only pass on retry?
+        id: flaky
+        if: always()
+        run: |
+          if jq -e '(.stats.flaky // 0) > 0' out/playwright-results.json >/dev/null 2>&1; then
+            echo "flaky=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Flaky journey::A scenario passed only on retry; Playwright artifacts uploaded."
+          else
+            echo "flaky=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: grafana/setup-k6-action@v1
 
       - name: k6 regression variants
@@ -139,9 +154,13 @@ jobs:
           node tools/grafana-annotate.js --kind=end --suite=regression \
             --at=${{ steps.run.outputs.started-at }} --outcome="$outcome"
 
-      # Traces, videos and screenshots only exist on failure (spec §8).
+      # Traces, videos and screenshots exist on failure and on a retried pass (spec §8, and
+      # `trace`/`video: retain-on-failure` in playwright.config.ts — a first attempt that failed
+      # keeps its artifacts even when the retry goes green).
       - name: Upload Playwright artifacts
-        if: failure() || steps.journey.outcome == 'failure'
+        if: >-
+          failure() || steps.journey.outcome == 'failure'
+          || steps.flaky.outputs.flaky == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ github.run_id }}

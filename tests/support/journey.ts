@@ -37,19 +37,16 @@ export interface JourneyIdentity {
   loginTitle: string;
   /** Set when the identity cannot run (fabrication script not run); skips the whole file. */
   skipReason?: string;
-  /** Guests get a program auto-created at first login; standard users do not. */
-  expectAutoCreatedProgram: boolean;
   /** Performs the login and returns the read-back client for the same identity. */
   login(page: Page): Promise<OdbClient>;
-  /** Proves the logged-in shell rendered (both websockets up) for this identity. */
-  assertLoggedIn(page: Page): Promise<void>;
+  /** Identity-specific proof, on top of the shared landing wait, that *this* user is in. */
+  assertIdentity(page: Page): Promise<void>;
 }
 
 export function guestIdentity(): JourneyIdentity {
   return {
     titleSuffix: "",
     loginTitle: "scenario 1: login as guest",
-    expectAutoCreatedProgram: true,
     async login(page) {
       // Attach before the login click: the JWT Explore receives is the one read-backs use.
       const session = GuestSession.watch(page);
@@ -57,12 +54,16 @@ export function guestIdentity(): JourneyIdentity {
       await ui.guestLoginButton(page).click();
       return session.client();
     },
-    async assertLoggedIn(page) {
-      // Explore only renders past the spinner once *both* the ODB and the prefs websockets
-      // have connected, so this assertion also covers the Hasura service being reachable.
+    async assertIdentity(page) {
+      // A guest is a brand-new user who can only ever see their own programs and starts with
+      // none, so the guest always takes the auto-create branch of ui.loggedInLanding — the
+      // obs tree is the exact landing to expect, and it is the stronger assertion: Explore
+      // renders past the spinner only once *both* the ODB and the prefs websockets have
+      // connected, so it also covers Hasura being reachable.
       await expect(ui.obsTreeAddObservationButton(page)).toBeVisible({
         timeout: 120_000,
       });
+      await expect(ui.guestLoginButton(page)).toBeHidden();
     },
   };
 }
@@ -79,23 +80,44 @@ export function standardIdentity(
     skipReason: user
       ? undefined
       : "no fabricated standard users — run stack/scripts/create-standard-users.sh",
-    expectAutoCreatedProgram: false,
     async login(page) {
       const session = new StandardSession(user!);
       await session.inject(page.context());
       await page.goto("/");
       return session.client();
     },
-    async assertLoggedIn(page) {
-      // No auto-selected program here, so the obs tree may not exist yet — the toolbar
-      // identity label is the shell-rendered proof, and the absent login dialog is what
-      // separates "the cookie logged us in" from "the dialog is still deciding".
+    async assertIdentity(page) {
+      // Which of the two landings a standard user gets is not knowable here — a PI on a
+      // fresh stack sees no programs and lands on the auto-created one, a staff user sees
+      // every program in the ODB and lands on the popup — so the identity proof cannot be a
+      // landing element. It is the toolbar name (the fabricated ORCID given/family name),
+      // and the absent login dialog is what separates "the injected cookie logged us in"
+      // from "the dialog is still deciding".
       await expect(ui.toolbarUserLabel(page, toolbarLabel)).toBeVisible({
         timeout: 120_000,
       });
       await expect(ui.guestLoginButton(page)).toBeHidden();
     },
   };
+}
+
+/**
+ * Opens the Proposals & Programs dialog from whichever landing Explore chose.
+ *
+ * Both landings can reach it, by different routes, and neither route depends on the kind of
+ * user: the popup branch *is* the dialog, and on the auto-create branch a program is selected,
+ * which is exactly the condition Explore gates the toolbar's "Manage Programs" item on
+ * (`TopBar.scala`: `if props.programId.isDefined`). Waiting for the dialog to open itself is
+ * what made the [pi] journey fail every first attempt in CI: a freshly fabricated PI owns no
+ * programs, so Explore auto-created one and routed to it instead of ever showing the popup.
+ */
+async function openProgramsDialog(page: Page): Promise<void> {
+  await expect(ui.loggedInLanding(page)).toBeVisible({ timeout: 120_000 });
+  if (!(await ui.programsDialog(page).isVisible())) {
+    await ui.mainMenuButton(page).click();
+    await ui.managePrograms(page).click();
+  }
+  await expect(ui.programsDialog(page)).toBeVisible({ timeout: 15_000 });
 }
 
 export function defineJourney(identity: JourneyIdentity): void {
@@ -115,11 +137,11 @@ export function defineJourney(identity: JourneyIdentity): void {
 
   /** Carried between the chained scenarios. */
   const journey: {
-    programsAtLogin: string[];
+    programsBeforeCreate: string[];
     createdProgramId?: string;
     observationId?: string;
     targetId?: string;
-  } = { programsAtLogin: [] };
+  } = { programsBeforeCreate: [] };
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -136,32 +158,37 @@ export function defineJourney(identity: JourneyIdentity): void {
     });
 
     await test.step("the logged-in shell renders", async () => {
-      await identity.assertLoggedIn(page);
+      // The shared wait first: either landing means Explore got past the spinner, which it
+      // cannot do without both websockets. Only then the identity-specific proof, so a
+      // failure says which of the two things broke.
+      await expect(ui.loggedInLanding(page)).toBeVisible({ timeout: 120_000 });
+      await identity.assertIdentity(page);
     });
 
     await test.step("read back: the identity can query its programs", async () => {
+      // Unconditional for every identity now, because both landings imply a program: the
+      // popup branch only renders when the user can already see some, and the auto-create
+      // branch has finished creating one by the time it routes to it.
       const data = await odb.run(programsQuery({}));
       const matches = data.programs.matches as { id: string }[];
-      if (identity.expectAutoCreatedProgram) {
-        // On first login with no programs Explore creates one for the guest.
-        expect(matches.length).toBeGreaterThanOrEqual(1);
-      }
-      journey.programsAtLogin = matches.map((p) => p.id);
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
   });
 
   test(t("scenario 2: create a program"), async () => {
     await test.step("Proposals & Programs → create", async () => {
-      // The two identities reach the dialog differently, and the guest's path does not
-      // exist for standard users: their toolbar menu has no "Manage Programs" item at all
-      // (it is About / Preferences / Redeem invitations / Logout). A standard user landing
-      // with no program selected gets the dialog opened for them instead — it may still be
-      // rendering when this scenario starts, hence the generous wait.
-      if (identity.expectAutoCreatedProgram) {
-        await ui.mainMenuButton(page).click();
-        await ui.managePrograms(page).click();
-      }
-      await expect(ui.programsDialog(page)).toBeVisible({ timeout: 15_000 });
+      await openProgramsDialog(page);
+
+      // The baseline for "which program did *this* step create" is taken here rather than at
+      // login: an identity that landed on the auto-create branch had a program made for it
+      // moments earlier, and a programs query racing that creation would leave scenarios 3
+      // and 4 working on Explore's program instead of ours. With the dialog open there is no
+      // creation in flight — it only renders when the user can already see programs.
+      const before = await odb.run(programsQuery({}));
+      journey.programsBeforeCreate = (
+        before.programs.matches as { id: string }[]
+      ).map((p) => p.id);
+
       await ui.createProgramButton(page).click();
     });
 
@@ -171,7 +198,7 @@ export function defineJourney(identity: JourneyIdentity): void {
         async () => {
           const data = await odb.run(programsQuery({}));
           const ids = (data.programs.matches as { id: string }[]).map((p) => p.id);
-          return ids.find((id) => !journey.programsAtLogin.includes(id));
+          return ids.find((id) => !journey.programsBeforeCreate.includes(id));
         },
         { timeoutMs: 30_000, intervalMs: 1_000 },
       );
