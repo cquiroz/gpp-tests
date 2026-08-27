@@ -7,9 +7,24 @@
 // (research/guest-visibility-refresh.md). Guests see only their own programs, which is why
 // each VU seeds its own working set.
 import http from "k6/http";
-import { fail } from "k6";
+import { fail, sleep } from "k6";
 import { endpoints } from "./config.js";
 import { tags } from "./metrics.js";
+
+/**
+ * Pause before giving up on a failed login.
+ *
+ * `fail()` throws, which aborts the iteration *before* it reaches its `think()` — so when SSO
+ * becomes unreachable, every VU drops into a tight retry loop with no pacing at all. Measured
+ * on the 2026-08-27 AWS run: once the proxy died, 1500 VUs drove 3,673 iterations/second
+ * against a dead endpoint (the healthy rate is ~46/s), producing 8.1M iterations, 15.5M
+ * requests and an 866 MB log — and burying the pre-failure metrics under millions of
+ * zero-millisecond errors.
+ *
+ * A failing target should be measured, not hammered: this keeps the failure visible in the
+ * metrics while pacing the retries roughly like a real user's.
+ */
+const FAILURE_BACKOFF_SECONDS = Number(__ENV.AUTH_FAILURE_BACKOFF || 3);
 
 // Refresh comfortably inside SSO's 10-minute JWT lifetime. Configurable because the spec
 // asks lucuma-odb to make `Config.JwtLifetime` an environment variable (spec §10 ask 2):
@@ -40,6 +55,7 @@ export function loginAsGuest() {
     tags: tags({ scenario: "login", operation: "AuthAsGuest" }),
   });
   if (response.status !== 201) {
+    sleep(FAILURE_BACKOFF_SECONDS);
     fail(
       `auth-as-guest returned ${response.status} (expected 201) from ${endpoints.ssoGuestUrl}`,
     );
@@ -76,6 +92,7 @@ export function refreshed(session) {
 function extractToken(body) {
   const token = String(body || "").trim().replace(/^"|"$/g, "");
   if (!token.startsWith("ey")) {
+    sleep(FAILURE_BACKOFF_SECONDS);
     fail(`SSO did not return a JWT: ${String(body).slice(0, 200)}`);
   }
   return token;

@@ -199,12 +199,19 @@ Verified offline, before any of that:
 1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
    arming path, `provision.sh` and `release-loadtest.sh` have only been exercised as dry runs
    or against a stubbed `heroku` CLI. The 200-VU profile has never run against Heroku dynos.
-2. **The dashboard's metric names.** Run annotations work, and the remote-write credentials are
-   verified — `tools/verify-metrics.sh` pushes `k6_gpp_verify_*` and Grafana accepts it. What is
-   still unproven is that the **GPP test results** panels resolve, because that needs the load
-   suite's own series (`k6_odb_read_duration_p95` and friends), and the suffixes have moved
-   between k6 versions. A local load run with remote-write enabled settles it for free — see
-   [grafana/README.md](grafana/README.md).
+   It *has* now run against an EC2 target, by hand: three runs on 2026-08-27, one of them
+   clean at 200 VUs with zero failures — see
+   [aws-load-target-options.md](research/aws-load-target-options.md) for what they measured and
+   [aws-nightly-automation.md](research/aws-nightly-automation.md) for automating that instead.
+2. **The dashboard's regression panel** — the rest is now **verified**. A live load run on
+   2026-08-27 streamed to Grafana Cloud and five of the six **GPP test results** panels drew:
+   read/write p95 by operation, error rate, scenario duration and GraphQL errors. The `_p95`
+   suffixes are correct for k6 v2 *provided* `K6_PROMETHEUS_RW_TREND_STATS` is set — without it
+   k6 emits p99 only and every p95 panel would render blank, which is why `performance.yml`
+   sets it explicitly. The exception is **Regression scenario pass rate**, which queries
+   `suite="regression"` series that nothing ever pushes: `regression.yml` runs k6 without
+   `-o experimental-prometheus-rw`, so that panel is blank by construction. Either enable
+   remote write there or drop the panel and let the `run-data` ledger be the regression record.
 3. **A failing run.** Every CI run so far has been green, so the red paths — artifact upload,
    the failure email, a threshold breach annotation — are untested end to end.
 4. **Explore's selectors will drift.** They are correct against lucuma-apps `main` as of the

@@ -177,9 +177,12 @@ structural advantage over any managed database (aws-load-target-options §5).
 
 ## 10. Phasing
 
-1. **One clean manual run** with load-sized limits — in flight.
-2. **Record what the ODB actually wants at 200 VUs** (`docker stats` during the hold), and
-   set the limits from measurement rather than from a percentage guess.
+1. ~~**One clean manual run** with load-sized limits~~ — **done 2026-08-27**: 40 minutes at
+   200 VUs, 111,333 iterations, checks 100%, zero GraphQL errors.
+2. ~~**Record what the services want**~~ — **done**, and folded into
+   `loadtest/aws-first-run.sh`'s allocation. Still open: the capacity knee, which sits between
+   200 and 1500 VUs; run 3 crossed it too fast to locate. A 200 → 800 ramp is the next
+   experiment, and it should precede automation so the nightly profile is set from evidence.
 3. **IAM: the OIDC role and the tag policy** — a one-off a human runs, wizard-style.
 4. **Lifecycle scripts and the AMI, driven by hand** until a full sequence works twice.
 5. **Swap the two workflow steps.** Run baseline-only for three nights (the ledger does this
@@ -190,9 +193,11 @@ Steps 1-2 are this week. Steps 3-4 are the actual project. Step 5 is an afternoo
 
 ## Open questions / caveats
 
-- **The ODB's steady-state memory at 200 VUs is still unknown.** The first run only proved
-  what is *not* enough (2 GiB, dead at ~185 VUs). Step 2 settles it, and every sizing figure
-  here is provisional until it does.
+- **The ODB's memory need is bounded, not known.** Measured 11.6 GiB at 200 VUs and 23.3 GiB
+  while ramping to 1500 — but a JVM expands into its limit and does not return memory, so those
+  are ceilings under 16 GiB and 28 GiB caps rather than requirements. What is settled: 2 GiB is
+  not enough (dead at ~185 VUs). Bisecting downward is the only way to find the floor, and it
+  matters here because it decides the instance type.
 - **AMI refresh cadence** (§4) is a guess. If the nightly `pull` starts costing more than a
   couple of minutes, rebuild sooner.
 - **Spot interruption** loses a night silently unless the workflow notices. The ledger would

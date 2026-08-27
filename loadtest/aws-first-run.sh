@@ -414,17 +414,32 @@ say "syncing the working copy (not a clone — this tests the code you have)"
 rsync_to "$TARGET_IP"
 
 # stack/docker-compose.yml ships CI-sized memory limits — odb 2g, postgres 1g, itc 1g,
-# obscalc 1g, sso 768m — because its day job is booting on a 2-core GitHub runner. Left
-# alone on a load target they become the bottleneck: the first AWS run here died 14 minutes
-# in, OOM-killed at ~185 VUs, with 58 of the box's 64 GiB unused. Scaled to the instance
-# rather than hardcoded, so a smaller --instance-type is not overcommitted.
+# obscalc 1g, sso 768m, caddy 256m, hasura 512m — because its day job is booting on a 2-core
+# GitHub runner. Left alone on a load target they are what you measure, not the machine.
+#
+# The shares below come from the 2026-08-27 runs on a 64 GiB m7i.4xlarge, not from a guess:
+#
+#   at  200 VUs   odb 11.6G  itc 3.0G  obscalc 2.7G  postgres 1.9G  sso 1.2G
+#   ramping 1500  odb 23.3G  itc 4.7G  obscalc 3.9G  postgres 2.1G  sso 1.3G  hasura 0.45G
+#
+# Two OOM kills taught the rest. Run 1 left odb at its 2g default and the kernel killed it 14
+# minutes in at ~185 VUs. Run 3 raised every service *except the proxy* — and caddy died at
+# its 256m default, taking the whole run with it, because a saturated backend leaves
+# connections queued in the proxy and its memory grows with them. Sizing six of seven
+# services is the same as sizing none.
+#
+# These are caps, not reservations: measured total usage was ~36 GiB, so the shares may
+# safely sum past what the box could satisfy all at once.
 TARGET_MIB="$(awsx ec2 describe-instance-types --instance-types "$TARGET_TYPE" \
   --query 'InstanceTypes[0].MemoryInfo.SizeInMiB' --output text)"
 pct() { printf '%sm' "$(( TARGET_MIB * $1 / 100 ))"; }
-LIMITS="ODB_MEM_LIMIT=$(pct 25) PG_MEM_LIMIT=$(pct 12) ITC_MEM_LIMIT=$(pct 6) \
-OBSCALC_MEM_LIMIT=$(pct 6) SSO_MEM_LIMIT=$(pct 3) PG_MAX_CONNECTIONS=400"
-say "memory limits for ${TARGET_MIB}MiB: odb $(pct 25), postgres $(pct 12), itc $(pct 6), obscalc $(pct 6), sso $(pct 3)"
-note "  ~52% of the box; the rest is page cache and headroom. Override any of them in the environment."
+LIMITS="ODB_MEM_LIMIT=$(pct 40) ITC_MEM_LIMIT=$(pct 10) OBSCALC_MEM_LIMIT=$(pct 8) \
+CADDY_MEM_LIMIT=$(pct 8) PG_MEM_LIMIT=$(pct 6) SSO_MEM_LIMIT=$(pct 4) \
+HASURA_MEM_LIMIT=$(pct 2) PG_MAX_CONNECTIONS=400"
+say "memory limits for ${TARGET_MIB}MiB:"
+say "  odb $(pct 40)  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
+note "  Caps rather than reservations. Override any of them in the environment; a target that"
+note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
 
 say "booting the stack"
 ssh_to "$TARGET_IP" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/odbattr && sg docker -c \"stack/scripts/bootstrap.sh\"'"

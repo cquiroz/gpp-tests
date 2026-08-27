@@ -126,6 +126,71 @@ A useful by-product: "a 2 GiB-capped ODB carries ~185 concurrent guest VUs" is i
 data point, and it says the ceiling worth measuring is the one this configuration sets, not
 the hardware's.
 
+### What the first three runs measured (2026-08-27)
+
+All on one `m7i.4xlarge` target (64 GiB) driven by a `c7i.2xlarge` generator in the same AZ,
+`stack/docker-compose.yml` booted from empty each time.
+
+| Run | Profile | Outcome |
+|---|---|---|
+| 1 | 200 VUs, 40 min | **OOM at 14 min, ~185 VUs** — odb left at its 2g CI default |
+| 2 | 200 VUs, 40 min | **clean**: 111,333 iterations, checks 100%, zero GraphQL errors |
+| 3 | ramp to 1500 VUs | **collapsed at ~1500** — caddy OOM-killed at its 256m default |
+
+**Run 2 is the only valid measurement, and it says 200 VUs is a light load for this hardware:**
+
+```
+odb_read_duration   p95 = 105.7 ms      odb_write_duration  p95 = 318.2 ms
+checks 100.00% (344,268)                http_req_failed 0.00%
+```
+
+That is 19× inside spec §6's 2 s read threshold and 16× inside the 5 s mutation threshold. The
+pacing arithmetic makes it unambiguous: ~147 average VUs against a 3 s mean think time and a
+0.17 s iteration predicts 46.4 iterations/s, and the run delivered **46.3** — the VUs were
+sleeping, not waiting. Nothing here is a capacity figure; it is a "comfortable" figure.
+
+**Run 3 found a real knee and then obscured it.** Before anything died, read p95 had reached
+3.0 s and write p95 7.9 s, with requests hitting k6's 60 s client timeout — genuine saturation
+somewhere between 200 and 1500 VUs. Caddy's OOM was a *symptom* of that: saturated backends
+leave connections queued in the proxy, whose memory grows with them until a 256 MiB cap ends
+it. So the ceiling is real and below 1500, but this run cannot say where.
+
+Peak memory, read from cgroup `memory.peak` (which is destroyed when a container exits — caddy's
+number was lost with it):
+
+| | at 200 VUs (run 2) | ramping to 1500 (run 3) |
+|---|---|---|
+| odb | 11.6 GiB | **23.3 GiB** |
+| itc | 3.0 GiB | 4.7 GiB |
+| obscalc | 2.7 GiB | 3.9 GiB |
+| postgres | 1.9 GiB | 2.1 GiB |
+| sso | 1.2 GiB | 1.3 GiB |
+| hasura | — | 0.45 GiB (**90% of its 512m default**) |
+
+Read these as ceilings rather than requirements: a JVM expands into whatever limit it is given
+and does not hand memory back, so "odb peaked at 23.3 GiB under a 28 GiB cap" bounds its
+appetite without establishing its need. What *is* established is that 2 GiB is not enough.
+
+Three things the runs proved incidentally: Postgres was never the constraint (2.1 GiB used,
+zero `too many clients`, no pool errors); the generator never dropped an iteration, so these
+are measurements of the target rather than of the `c7i.2xlarge`; and the **GPP test results**
+dashboard resolves against live load-suite series, closing the last item in the README's
+"still untested" list — except its regression panel, which queries `suite="regression"` series
+that `regression.yml` never pushes, because that workflow does not enable remote write.
+
+### The next run
+
+1. **`CADDY_MEM_LIMIT` is not optional.** `loadtest/aws-first-run.sh` now sizes all seven
+   services from the instance type; sizing six of them is the same as sizing none.
+2. **Ramp 200 → 800 over ~30 minutes**, not to 1500. The knee is in that range, and run 3
+   crossed it too fast to locate.
+3. **Don't run Hasura.** It is Explore's preferences service, k6 never touches it, and it sat
+   at 90% of its default limit for no reason.
+4. **The auth backoff matters at the ceiling.** Fixed in `k6/lib/auth.js`: `fail()` throws
+   before the iteration reaches its `think()`, so a dead endpoint sent 1500 VUs into an
+   unpaced retry loop — 3,673 iterations/s against nothing, 8.1M iterations, an 866 MB log,
+   and pre-failure metrics buried under millions of zero-millisecond errors.
+
 ### Cost
 
 Verified against the EC2 on-demand dataset for `us-east-1`, Linux, 2026-08-25. EC2 bills per
