@@ -101,6 +101,39 @@ export const addTargetButton = (page: Page): Locator =>
 export const emptySiderealTargetItem = (page: Page): Locator =>
   page.getByRole("button", { name: /empty sidereal target/i });
 
+/* ── Proposals (tests/COVERAGE.md "Proposals") ──────────────────────────────────────── */
+
+/**
+ * Submit and retract, from `ProposalSubmissionBar.scala`. Each is rendered only in the state
+ * where it applies — Submit while NOT_SUBMITTED, Retract while SUBMITTED — so asserting that
+ * one has replaced the other is a cleaner check of the transition than reading a status label.
+ *
+ * Submit carries `disabled = … || hasProposalErrors || isDueDeadline || !canSubmit`: a
+ * disabled button means the ODB has rejected something about the proposal, not that the click
+ * failed. {@link proposalErrors} is where that shows up.
+ */
+export const submitProposalButton = (page: Page): Locator =>
+  page.getByRole("button", { name: /submit proposal/i });
+
+export const retractProposalButton = (page: Page): Locator =>
+  page.getByRole("button", { name: /retract proposal/i });
+
+/**
+ * Two fields of the proposal editor that carry accessible names, chosen because they *echo
+ * what the fixture set through the API* — so asserting them proves the editor rendered and
+ * that it is showing this proposal, not merely that some form appeared. The category input
+ * next to them has no accessible name at all, which is why it is addressed by its value.
+ */
+export const proposalBand3Field = (page: Page): Locator =>
+  page.getByRole("textbox", { name: /consider for band 3/i });
+
+export const proposalTitleField = (page: Page): Locator =>
+  page.getByRole("textbox", { name: /^title$/i });
+
+/** The partner-splits editor's heading (`PartnerSplitsEditor.scala`). */
+export const proposalPartnersLabel = (page: Page): Locator =>
+  page.getByText(/^partners$/i).first();
+
 /**
  * The subtitle text on the observation card in the obs tree (ObsBadge).
  *
