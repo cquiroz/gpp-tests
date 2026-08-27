@@ -18,7 +18,8 @@ The cheapest credible shape is the one already written: run `stack/docker-compos
 same file the nightly regression suite boots — on a single EC2 instance that is stopped between
 runs. At verified on-demand rates that is **≈$1.16 per run and ≈$40/month**, against ≈$63/month
 for the Heroku target, because there is no un-pausable managed database. It needs no new
-service topology, only instance lifecycle.
+service topology, only instance lifecycle — and raising the compose file's memory limits,
+which are sized for CI and are otherwise the first thing you measure (§3).
 
 The reason to do it at all is **absolute capacity**: Heroku answers "is tonight slower than last
 night" on opaque shared hardware, and cannot answer "how many concurrent users can GPP serve",
@@ -87,6 +88,43 @@ preferences.
 refresh cookie `Secure`; over plain HTTP the JWT refresh loop breaks, and every VU silently
 becomes a new guest after eight minutes — the exact failure already found and fixed in
 `k6/lib/auth.js`. TLS is one container, so terminate it rather than rediscover that.
+
+### Raise the memory limits — they are sized for CI, not for a load target
+
+`docker-compose.yml` is the best-tested artifact in this repository for *booting* the stack,
+and that is why Option A reuses it. But its `mem_limit`s exist so the ephemeral regression
+run fits on a 2-core GitHub runner: **odb 2g, postgres 1g, itc 1g, obscalc 1g, sso 768m —
+about 5.75 GiB in total.** Left alone on a load target they are the bottleneck, and the
+measurement is of the limit rather than of the machine.
+
+This is not a hypothetical. The first run against an `m7i.4xlarge` (2026-08-27, 64 GiB)
+died **14 minutes in, with the kernel OOM-killing the ODB at ~185 concurrent VUs** — a
+minute before the 200-VU hold even began — while 58 GiB of the box sat unused. The
+remaining 26 minutes measured VUs hammering a dead service: `checks` breached, and 243 MB
+of requests produced only 81 MB of responses.
+
+Two details worth carrying forward:
+
+- **It was a container kill, not a Java heap exhaustion.** The logs run normally to the last
+  line with no `OutOfMemoryError`, so the fix is the cgroup limit, not heap tuning: total
+  process RSS — heap plus metaspace, thread stacks and direct buffers, all of which grow
+  with connection count — crossed 2 GiB. A JVM given a 2 GiB container also defaults to a
+  ~512 MB heap (`MaxRAMPercentage=25%`), so raising the limit fixes both at once.
+- **Everything is env-overridable**, so this is configuration, not a code change:
+
+```bash
+ODB_MEM_LIMIT=16g PG_MEM_LIMIT=8g ITC_MEM_LIMIT=4g \
+OBSCALC_MEM_LIMIT=4g SSO_MEM_LIMIT=2g PG_MAX_CONNECTIONS=400 \
+  stack/scripts/bootstrap.sh
+```
+
+`loadtest/aws-first-run.sh` now derives these from the instance type (~25% of RAM to the
+ODB, ~52% across the stack) rather than hardcoding them, so a smaller instance is not
+overcommitted.
+
+A useful by-product: "a 2 GiB-capped ODB carries ~185 concurrent guest VUs" is itself a
+data point, and it says the ceiling worth measuring is the one this configuration sets, not
+the hardware's.
 
 ### Cost
 
@@ -223,7 +261,10 @@ Steps 1 and 2 are cheap and answer the actual question. Steps 3 and 4 are real p
   2026-08-25, and exclude data transfer, NAT and EBS snapshots. Region choice matters: closer to
   the Grafana Cloud stack and to whoever reads the results.
 - **Instance sizing is a guess.** `m7i.4xlarge` was chosen for headroom, not measured. Step 2
-  above is what turns it into a number.
+  above is what turns it into a number — and the first attempt showed that the *container
+  limits*, not the instance, are what you hit first if they are left at their CI values (§3).
+  What the ODB actually wants at 200 VUs is still unmeasured; `docker stats` during a clean
+  run is what settles it.
 - **Fargate and RDS are not costed**, deliberately — see §4.
 - **Whether one host distorts the result** is unknown: Postgres and four JVMs on the same box
   share memory bandwidth and page cache in ways Heroku's split does not. It may flatter the ODB
