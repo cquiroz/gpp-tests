@@ -214,6 +214,21 @@ Cheaper than the Heroku target's ≈$63/month, and for a specific structural rea
 `m7i.4xlarge` is deliberate headroom: four JVMs plus Postgres on one host, and the point of the
 exercise is that the *services* are the bottleneck, not the box.
 
+**Measured, 2026-08-27.** Both instances ran 3h 02m 55s (per-second billing, no hour rounding):
+
+| | | |
+|---|---|---|
+| `m7i.4xlarge` target | 3.049 h × $0.8064 | $2.46 |
+| `c7i.2xlarge` generator | 3.045 h × $0.3570 | $1.09 |
+| EBS, 90 GiB gp3, prorated over hours | | $0.03 |
+| data transfer — inbound free, 0.9 GB out inside the 100 GB/month allowance | | $0.00 |
+| **total for an afternoon of three runs** | | **$3.58** |
+
+The three 40-minute runs account for ~2 hours of that (**≈$2.33**, i.e. ≈$0.78 each against the
+≈$1.16 projected — the estimate assumed a full hour per run including boot and teardown). The
+remaining **≈$1.25** was instances idling while two OOM kills were diagnosed by hand, which is
+precisely the cost a scripted nightly does not incur. The projection holds.
+
 ### Trade-offs
 
 - **For:** no new service topology; reuses the most-exercised file in the repo; identical to

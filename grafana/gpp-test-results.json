@@ -1,14 +1,20 @@
 {
   "uid": "gpp-test-results",
   "title": "GPP test results",
-  "description": "Nightly load latency, error trend and regression pass/fail history for the odbattr suites. Run identity comes from the odbattr annotations, not from metric labels (spec §7).",
-  "tags": ["odbattr", "gpp"],
+  "description": "Nightly load latency, error trend and regression pass/fail history for the odbattr suites. Run identity comes from the odbattr annotations, not from metric labels (spec \u00a77).",
+  "tags": [
+    "odbattr",
+    "gpp"
+  ],
   "timezone": "utc",
   "editable": true,
   "schemaVersion": 39,
   "version": 1,
   "refresh": "",
-  "time": { "from": "now-30d", "to": "now" },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
@@ -26,7 +32,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -35,22 +44,38 @@
       },
       {
         "name": "odbattr runs",
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": false,
         "iconColor": "blue",
-        "target": { "limit": 200, "matchAny": false, "tags": ["odbattr"], "type": "tags" }
+        "target": {
+          "limit": 200,
+          "matchAny": false,
+          "tags": [
+            "odbattr"
+          ],
+          "type": "tags"
+        }
       },
       {
         "name": "threshold breaches",
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": false,
         "iconColor": "red",
         "target": {
           "limit": 200,
           "matchAny": false,
-          "tags": ["odbattr", "breach"],
+          "tags": [
+            "odbattr",
+            "breach"
+          ],
           "type": "tags"
         }
       }
@@ -60,27 +85,102 @@
     {
       "type": "timeseries",
       "title": "Read p95 by operation (load)",
-      "description": "Night-over-night read latency. The nightly claim is relative: a step up here is the regression signal, not the absolute value.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Night-over-night read latency. The nightly claim is relative: a step up here is the regression signal, not the absolute value. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 1,
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "showPoints": "auto" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "auto"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 2000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VUs"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "virtual users"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#909090"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -88,33 +188,114 @@
           "editorMode": "code",
           "expr": "k6_odb_read_duration_p95{suite=\"load\"}",
           "legendFormat": "{{operation}}"
+        },
+        {
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "k6_vus",
+          "legendFormat": "VUs"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Write p95 by operation (load)",
-      "description": "Mutation latency. The spec's absolute cap is 5 s; the armed threshold is usually tighter, derived from the baseline median.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Mutation latency. The spec's absolute cap is 5 s; the armed threshold is usually tighter, derived from the baseline median. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 2,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "showPoints": "auto" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "showPoints": "auto"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 5000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VUs"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "virtual users"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#909090"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
@@ -122,34 +303,109 @@
           "editorMode": "code",
           "expr": "k6_odb_write_duration_p95{suite=\"load\"}",
           "legendFormat": "{{operation}}"
+        },
+        {
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "k6_vus",
+          "legendFormat": "VUs"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Error rate",
-      "description": "Share of failed HTTP requests. The armed threshold is 1%.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Share of failed HTTP requests. The armed threshold is 1%. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 3,
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
           "min": 0,
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 0.01 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VUs"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "virtual users"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#909090"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
       },
       "targets": [
         {
@@ -157,6 +413,12 @@
           "editorMode": "code",
           "expr": "k6_http_req_failed_rate",
           "legendFormat": "{{suite}}"
+        },
+        {
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "k6_vus",
+          "legendFormat": "VUs"
         }
       ]
     },
@@ -164,9 +426,17 @@
       "type": "timeseries",
       "title": "Regression scenario pass rate",
       "description": "1 = the scenario passed in that run. Gaps are runs that never got as far as the scenario; check the run's annotation for the CI link.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 4,
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -181,16 +451,31 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean"] },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "targets": [
         {
@@ -205,26 +490,48 @@
       "type": "timeseries",
       "title": "Scenario duration p95",
       "description": "How long each scenario takes, both suites. A scenario getting slower without a threshold breach is the early warning.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 5,
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
-          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0 }
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {
           "refId": "A",
           "editorMode": "code",
           "expr": "k6_gpp_scenario_duration_p95",
-          "legendFormat": "{{suite}} · {{scenario}}"
+          "legendFormat": "{{suite}} \u00b7 {{scenario}}"
         }
       ]
     },
@@ -232,20 +539,41 @@
       "type": "timeseries",
       "title": "GraphQL errors",
       "description": "ODB responses carrying a GraphQL `errors` array. Any sustained value here is a functional problem, not a performance one.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "id": 6,
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
           "min": 0,
-          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 40 }
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 40
+          }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "sum"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
       },
       "targets": [
         {

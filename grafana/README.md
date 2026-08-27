@@ -25,6 +25,19 @@ the first run that pushes metrics, open Explore, type `k6_` and confirm the six 
 resolve. Fixing a suffix here is a one-line dashboard edit; the metric definitions themselves
 live in `k6/lib/metrics.js`.
 
+## Reading latency against load
+
+The read p95, write p95 and error-rate panels each carry a second series, `k6_vus`, as a dashed
+grey line on the right axis. It is a k6 built-in gauge and takes no `suite` label, so its query
+is unfiltered.
+
+It is there because a latency number alone cannot be read: the 2026-08-27 AWS ramp showed p95
+climbing to 3 s and then *falling back* to single-digit milliseconds, which looks like recovery
+and was actually the proxy dying and every request failing instantly
+([the run](../research/aws-load-target-options.md)). With the VU line in view, that shape is
+unmistakable — and working out where the knee sits stops being an exercise in reconstructing
+the stage timeline by hand.
+
 ## Labels, and why there is no `testid` label
 
 Metric labels are capped at `suite`, `scenario`, `operation` and `status`
