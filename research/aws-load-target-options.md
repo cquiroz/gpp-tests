@@ -250,7 +250,10 @@ are the template.
    `ODB_GRAPHQL_URL` pointed elsewhere. This is where you find out whether AWS numbers tell you
    anything Heroku's do not.
 3. **Automate it** only if step 2 pays off: instance lifecycle, the tag guard, the IAM policy,
-   and a `performance.yml` that can target either environment.
+   and a `performance.yml` that can target either environment. Now specified in
+   [Running the nightly load suite on AWS](aws-nightly-automation.md) — including the point
+   that M4 was never provisioned on Heroku, so this is an implementation choice rather than a
+   migration.
 4. **Fargate/RDS** only if step 2 shows the single-host topology is what is limiting you.
 
 Steps 1 and 2 are cheap and answer the actual question. Steps 3 and 4 are real projects.
