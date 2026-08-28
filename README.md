@@ -15,7 +15,7 @@ Grafana Cloud stack.
 
 | Path | What lives there |
 |---|---|
-| `lib/` | Pure, dependency-free modules shared by **both** suites — GraphQL operations, endpoints, metric-label budget, run summaries, threshold calibration, annotations. Unit-tested; imported directly by k6 and by Playwright. |
+| `lib/` | Pure, dependency-free modules shared by **both** suites — GraphQL operations, endpoints, metric-label budget, run summaries, threshold calibration, annotations, and the scenario parity catalog (`scenario-catalog.js`: every scenario runs in both suites unless its entry says why not; enforced by `npm run check`). Unit-tested; imported directly by k6 and by Playwright. |
 | `schema/` | Vendored `OdbSchema.graphql`, so every operation is schema-validated offline ([why](schema/README.md)). |
 | `stack/` | The ephemeral regression stack: `docker-compose.yml`, Caddy config, bootstrap scripts (spec §3). |
 | `tests/` | The Playwright journey (spec §5) and its support layer. Selectors are all in `tests/support/selectors.ts`. |

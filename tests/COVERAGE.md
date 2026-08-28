@@ -62,3 +62,8 @@ rules and Explore's diverge — worth writing down, because the divergence is th
 4. P0 areas run daily; the full suite runs weekly and via `workflow_dispatch`.
 5. An area is `covered` only when its row names the spec file and the spec asserts the
    area's core behavior, not merely renders it.
+6. Every spec title needs an entry in [`lib/scenario-catalog.js`](../lib/scenario-catalog.js),
+   the machine-checked ledger of e2e ↔ GraphQL scenario parity: point it at a k6 counterpart,
+   or record why the scenario is one-sided. `npm run check` enforces both directions
+   (`lib/scenario-catalog.test.js` for the k6 side, `npm run verify:parity` for this one), so
+   a spec without an entry is a red check, not a review comment.
