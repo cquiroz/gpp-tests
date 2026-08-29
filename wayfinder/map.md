@@ -99,12 +99,22 @@ Settled during charting (constraints for every ticket):
   reached**: [gpp-testing-system-spec.md](../gpp-testing-system-spec.md) consolidates
   all decisions into an implementation-ready design with five rollout milestones.
   **No open tickets remain — this map is complete.**
+- [Decide dev-process integration](tickets/010-decide-dev-process-integration.md)
+  *(post-spec)* — goals are per-merge attribution + release confidence, everything
+  advisory: Explore gets a per-merge lane (bundle artifact + dispatch here + commit
+  status back), the ODB stays daily, alerts move to Slack (red + recovery), the promote
+  script waits on a release-confidence run, the weekly full suite gets built; test code
+  stays canonical here with the testid contract owned by lucuma-apps; pre-merge/blocking
+  remains deferred behind M4 + a red-path drill.
 
 ## Not yet specified
 
 - **Per-PR test dispatch** — phase 2: `lucuma-odb` / `lucuma-apps` CI triggering the
   regression subset on pull requests and reporting status back. Deliberately deferred
-  until v1 scheduled runs prove out.
+  until v1 scheduled runs prove out. Refined by ticket 010: the *per-merge* advisory
+  lane proceeds now (it generates the proving-period evidence); true pre-merge checks —
+  and the consume model that goes with them — stay in the fog behind M4 and a red-path
+  drill.
 - **The other web applications** — a few lightly-used apps also talk to odb; they may
   join the scenario set later. Not yet named or prioritized.
 - **New-user signup flow** — v1 logs in existing test users; testing the signup path
