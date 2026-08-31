@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "testid": "regression-33405813549",
+  "suite": "regression",
+  "environment": "ephemeral",
+  "startedAt": "2026-08-31T14:59:26.000Z",
+  "endedAt": "2026-08-31T15:04:04.827Z",
+  "durationSeconds": 278.827,
+  "outcome": "pass",
+  "thresholds": {
+    "mode": "baseline",
+    "breaches": []
+  },
+  "images": {
+    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:6a17a18eff60c922a9ef214a6e89d0a1d2d69abc75a1c24810e3e1cfcd931a48",
+    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:4b3023b82f30b019455a0d7d9e2d8f5c813a430660997020f0703a79b384dc47",
+    "itc": "registry.heroku.com/itc-dev/web@sha256:ffd8be0da344cdabed5ccc39dd6bee2cff7a858ba4fcac819bd729e3dc022260",
+    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:52d9a9462a4dbb9848730623138c8604a0e08dd91f661c039d61242a41d25a23"
+  },
+  "scenarios": [
+    {
+      "name": "scenario 1: login by injected session [pi]",
+      "status": "passed",
+      "durationSeconds": 14.536
+    },
+    {
+      "name": "scenario 2: create a program [pi]",
+      "status": "passed",
+      "durationSeconds": 7.378
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [pi]",
+      "status": "passed",
+      "durationSeconds": 12.224
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [pi]",
+      "status": "passed",
+      "durationSeconds": 16.52
+    },
+    {
+      "name": "scenario 1: login by injected session [staff]",
+      "status": "passed",
+      "durationSeconds": 8.404
+    },
+    {
+      "name": "scenario 2: create a program [staff]",
+      "status": "passed",
+      "durationSeconds": 5.839
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [staff]",
+      "status": "passed",
+      "durationSeconds": 10.209
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [staff]",
+      "status": "passed",
+      "durationSeconds": 16.079
+    },
+    {
+      "name": "scenario 1: login as guest",
+      "status": "passed",
+      "durationSeconds": 13.396
+    },
+    {
+      "name": "scenario 2: create a program",
+      "status": "passed",
+      "durationSeconds": 7.313
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration",
+      "status": "passed",
+      "durationSeconds": 11.255
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload",
+      "status": "passed",
+      "durationSeconds": 13.669
+    },
+    {
+      "name": "a fabricated standard PI drives Explore via cookie injection",
+      "status": "passed",
+      "durationSeconds": 6.172
+    }
+  ],
+  "metrics": {
+    "readP95Ms": 72.293,
+    "writeP95Ms": 94.569,
+    "p95Ms": 97.549,
+    "errorRate": 0,
+    "iterations": 1,
+    "httpReqs": 11
+  },
+  "runUrl": "https://github.com/cquiroz/gpp-tests/actions/runs/33405813549"
+}
