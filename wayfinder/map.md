@@ -5,6 +5,9 @@ title: Automated testing system for odb + Explore
 
 # Automated testing system for odb + Explore
 
+> **Complete — succeeded by** [map-gpp-tests.md](map-gpp-tests.md), which graduates
+> the prototype this map specified into `gemini-hlsw/gpp-tests`.
+
 Tracker: local markdown. Tickets live in `wayfinder/tickets/`, one file each, with
 frontmatter `status` (open/closed), `assignee` (the claim — empty = unclaimed), and
 `blocked-by` (list of ticket ids). A ticket is on the **frontier** when it is open,
