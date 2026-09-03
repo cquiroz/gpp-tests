@@ -39,8 +39,10 @@ Settled during charting (constraints for every ticket):
   and the new on-demand surge run (the flagship of this effort).
 - **Standard users in k6 are now in scope** — surge traffic is proposal traffic, and
   guests cannot touch proposals (the old map's "phase 2" is pulled forward).
-- Surge realism anchors on **up to 500 proposals in the last hour of a CfP**, layered
-  over the regular-operations mix.
+- Surge realism anchors on the stated ceiling of **up to 500 proposals in the last
+  hour of a CfP**, layered over the regular-operations mix. Research (014) finds a
+  whole semester is ~417 proposals — ticket 015 reconciles the 500/1h stress ceiling
+  with a realistic profile (~100 submissions/h peak).
 - Load-target platform/sizing is decided from **evidence of production's actual
   shape**, not assumed; surge cadence is on-demand, which reopens persistent-vs-
   ephemeral for the target.
@@ -49,14 +51,28 @@ Settled during charting (constraints for every ticket):
 
 <!-- one line per closed ticket: gist + link -->
 
+- [Research: production deployment shape and sizing](tickets/013-research-production-shape.md) —
+  production is four Heroku apps (`lucuma-postgres-odb-production` running web+obscalc+
+  calibration on one shared Postgres, `lucuma-sso-production`, `itc-production` with
+  Redis, `lucuma-resource-production`) plus Hasura prefs; dyno/PG sizing lives only in
+  the Heroku control plane — the research file lists the exact read-only commands
+  (local CLI token is stale; `heroku login` may suffice) and who to ask.
+- [Research: CfP-deadline production telemetry](tickets/014-research-cfp-deadline-telemetry.md) —
+  there is nothing to mine: no real standard CfP has ever run on GPP (first is
+  earliest 2027B; the only call, XT1, drew 10 proposals, data aged out). Evidence
+  check: a whole semester is ~417 valid proposals, so **500/1h is a stress ceiling,
+  not a realistic peak** — realistic final-hour peak ≈ 100 submission mutations/h
+  with retract/resubmit churn. Capture plan for the next real call recorded.
+
 ## Not yet specified
 
 - **Surge reporting** — which Grafana panels / summary artifacts a surge run publishes
   and how its pass/fail verdict is surfaced; sharpens once the workload model (015)
   and profile (018) exist.
 - **Trend-run threshold recalibration** — baselines reset once the real target exists.
-- **Post-deadline calibration** — adjust the surge model against telemetry from the
-  next real CfP close.
+- **Post-deadline calibration** — capture telemetry at the next real CfP close (the
+  H0-H4 queries in `research/cfp-deadline-telemetry.md`) and adjust the surge model;
+  depends on the span-attribute ask (ticket 019) landing upstream first.
 - **Dev-process integration in gpp-tests** — the per-merge Explore lane, Slack alerts,
   and promote gate decided in [ticket 010](tickets/010-decide-dev-process-integration.md)
   still need to be built, now in the new repo.
