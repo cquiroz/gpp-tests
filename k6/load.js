@@ -109,7 +109,7 @@ export default function () {
  */
 function seedWorkingSet() {
   const session = loginAsGuest();
-  const label = `odbattr ${TESTID} vu${exec.vu.idInTest}`;
+  const label = `gpp-tests ${TESTID} vu${exec.vu.idInTest}`;
   const count =
     SEED_PROGRAMS_MIN +
     Math.floor(Math.random() * (SEED_PROGRAMS_MAX - SEED_PROGRAMS_MIN + 1));
@@ -182,7 +182,7 @@ function write() {
   } else {
     scenario("create-program", () => {
       const programId = createProgramScenario(vu.session, {
-        name: `odbattr ${TESTID} vu${exec.vu.idInTest} extra`,
+        name: `gpp-tests ${TESTID} vu${exec.vu.idInTest} extra`,
       });
       if (programId) vu.programs.push({ programId, observationId: undefined });
       return programId;

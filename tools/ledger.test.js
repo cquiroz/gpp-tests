@@ -69,6 +69,6 @@ describe("loadLedger", () => {
   });
 
   it("returns nothing for a ledger that does not exist yet (first ever run)", () => {
-    expect(loadLedger(join(tmpdir(), "definitely-not-here-odbattr"))).toEqual([]);
+    expect(loadLedger(join(tmpdir(), "definitely-not-here-gpp-tests"))).toEqual([]);
   });
 });

@@ -1,9 +1,9 @@
 {
   "uid": "gpp-test-results",
   "title": "GPP test results",
-  "description": "Nightly load latency, error trend and regression pass/fail history for the odbattr suites. Run identity comes from the odbattr annotations, not from metric labels (spec \u00a77).",
+  "description": "Nightly load latency, error trend and regression pass/fail history for the gpp-tests suites. Run identity comes from the gpp-tests annotations, not from metric labels (spec \u00a77).",
   "tags": [
-    "odbattr",
+    "gpp-tests",
     "gpp"
   ],
   "timezone": "utc",
@@ -43,7 +43,7 @@
         "type": "dashboard"
       },
       {
-        "name": "odbattr runs",
+        "name": "gpp-tests runs",
         "datasource": {
           "type": "grafana",
           "uid": "-- Grafana --"
@@ -55,7 +55,7 @@
           "limit": 200,
           "matchAny": false,
           "tags": [
-            "odbattr"
+            "gpp-tests"
           ],
           "type": "tags"
         }
@@ -73,7 +73,7 @@
           "limit": 200,
           "matchAny": false,
           "tags": [
-            "odbattr",
+            "gpp-tests",
             "breach"
           ],
           "type": "tags"

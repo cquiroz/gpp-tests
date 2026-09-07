@@ -45,12 +45,12 @@ export default function () {
   if (!session) fail("guest login failed; the rest of the run would be meaningless");
 
   const programId = scenario("create-program", () =>
-    createProgramScenario(session, { name: `odbattr ${TESTID}` }),
+    createProgramScenario(session, { name: `gpp-tests ${TESTID}` }),
   );
   if (!programId) fail("could not create a program");
 
   const observation = scenario("create-observation", () =>
-    createObservationScenario(session, programId, { subtitle: `odbattr ${TESTID}` }),
+    createObservationScenario(session, programId, { subtitle: `gpp-tests ${TESTID}` }),
   );
   if (!observation) fail("could not create an observation with a target and mode");
 

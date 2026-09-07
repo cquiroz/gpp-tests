@@ -305,13 +305,13 @@ The three checks port directly:
 
 1. the resource name must match a load-test pattern;
 2. it must not match a protected pattern (`prod`, `staging`, …);
-3. it must carry a tag this tooling set itself — `odbattr:loadtest=1` — which production will
+3. it must carry a tag this tooling set itself — `gpp-tests:loadtest=1` — which production will
    never have, and which therefore cannot be satisfied by a typo.
 
 Plus two AWS-specific controls with no Heroku equivalent, both stronger than anything in the
 current setup:
 
-- **An IAM role scoped by tag.** A policy conditioned on `aws:ResourceTag/odbattr = loadtest`
+- **An IAM role scoped by tag.** A policy conditioned on `aws:ResourceTag/gpp-tests = loadtest`
   makes the destructive calls *impossible* against untagged resources, rather than merely
   refused by a script. This is the control Heroku cannot offer, and it closes the gap noted in
   the load-target README about token scope.

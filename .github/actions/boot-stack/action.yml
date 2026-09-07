@@ -64,5 +64,5 @@ runs:
       if: failure()
       shell: bash
       run: |
-        docker compose --project-name odbattr --file stack/docker-compose.yml ps || true
-        docker compose --project-name odbattr --file stack/docker-compose.yml logs --tail 200 || true
+        docker compose --project-name gpp-tests --file stack/docker-compose.yml ps || true
+        docker compose --project-name gpp-tests --file stack/docker-compose.yml logs --tail 200 || true

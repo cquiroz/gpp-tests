@@ -37,7 +37,7 @@ VU** and **gpp-tests** revised.
   public.
 - The ticket 010 dev-process items (Explore per-merge lane, Slack alerts, promote gate)
   wait behind the stress work.
-- Working branch: `surge` in odbattr, mirrored to `cquiroz/gpp-tests` for CI; ticket 012
+- Working branch: `surge` in this repo, pushed to `cquiroz/gpp-tests` for CI; ticket 012
   later migrates main plus surge to `gemini-hlsw/gpp-tests` in one move.
 
 ### The surge claim

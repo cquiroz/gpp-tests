@@ -1,4 +1,4 @@
-# odbattr — automated cross-system testing for GPP
+# gpp-tests — automated cross-system testing for GPP
 
 Two suites against the GPP (lucuma) ecosystem, per
 [`gpp-testing-system-spec.md`](gpp-testing-system-spec.md):

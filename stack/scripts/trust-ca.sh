@@ -24,7 +24,7 @@ if [[ -n "${INSTALL_NSS:-}" ]]; then
     NSSDB="$HOME/.pki/nssdb"
     mkdir -p "$NSSDB"
     [[ -f "$NSSDB/cert9.db" ]] || certutil -N -d "sql:$NSSDB" --empty-password
-    certutil -d "sql:$NSSDB" -A -t "C,," -n odbattr-caddy-root -i "$CA_PATH"
+    certutil -d "sql:$NSSDB" -A -t "C,," -n gpp-tests-caddy-root -i "$CA_PATH"
     log "installed the root CA into Chromium's NSS store ($NSSDB)"
   else
     warn "certutil not found (install libnss3-tools) — skipping the NSS install"

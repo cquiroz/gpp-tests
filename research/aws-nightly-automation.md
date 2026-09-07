@@ -67,7 +67,7 @@ permissions:
 steps:
   - uses: aws-actions/configure-aws-credentials@v4
     with:
-      role-to-assume: arn:aws:iam::<account>:role/odbattr-nightly
+      role-to-assume: arn:aws:iam::<account>:role/gpp-tests-nightly
       aws-region: us-east-1
 ```
 
@@ -78,8 +78,8 @@ arrangement rather than merely different:
   `repo:<org>/<repo>:ref:refs/heads/main`, so a branch or a fork cannot assume the role.
 - **Permission policy** — every destructive action (`ec2:TerminateInstances`,
   `ec2:StopInstances`, `ssm:SendCommand`) conditioned on
-  `aws:ResourceTag/odbattr:loadtest = 1`. `ec2:RunInstances` is conditioned on
-  `aws:RequestTag/odbattr:loadtest` so the tooling can only *create* tagged resources
+  `aws:ResourceTag/gpp-tests:loadtest = 1`. `ec2:RunInstances` is conditioned on
+  `aws:RequestTag/gpp-tests:loadtest` so the tooling can only *create* tagged resources
   either.
 
 The Heroku token could not be constrained this way: it carries whatever access its owner
@@ -152,7 +152,7 @@ structural advantage over any managed database (aws-load-target-options §5).
 
 ## 8. Safety rails to port
 
-- The three `guard.sh` checks become: the resource must carry `odbattr:loadtest=1`; its
+- The three `guard.sh` checks become: the resource must carry `gpp-tests:loadtest=1`; its
   `Name` tag must match a load-test pattern; and it must not match a protected pattern.
   `loadtest/guard.test.sh` is the template — the AWS versions need the same 18-ish cases.
 - **The IAM tag condition (§3) is the real rail.** The script checks are defence in depth.

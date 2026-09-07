@@ -87,7 +87,7 @@ export function createObservationScenario(session, programId, opts = {}) {
     createObservation({
       programId,
       targetIds: [targetId],
-      subtitle: opts.subtitle || "odbattr",
+      subtitle: opts.subtitle || "gpp-tests",
       observingMode: gmosNorthLongSlit(),
     }),
     { scenario: "create-observation", measure: opts.measure },
@@ -107,7 +107,7 @@ export function createObservationScenario(session, programId, opts = {}) {
  * @returns {boolean}
  */
 export function editSubtitleScenario(session, observationId, opts = {}) {
-  const subtitle = opts.subtitle || `odbattr edited ${Date.now()}`;
+  const subtitle = opts.subtitle || `gpp-tests edited ${Date.now()}`;
   const data = gql(
     session,
     updateObservationSubtitle({ observationId, subtitle }),

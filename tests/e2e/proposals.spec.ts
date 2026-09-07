@@ -93,7 +93,7 @@ test("scenario 2: the PI's proposal is written against that call", async () => {
   expect(proposal.callId, "scenario 1 must have created a call").toBeTruthy();
   const odb = piSession.client();
 
-  proposal.programName = `odbattr proposals ${Date.now()}`;
+  proposal.programName = `gpp-tests proposals ${Date.now()}`;
   const created = await odb.run<{
     createProgram: { program: { id: string } };
   }>(createProgram({ name: proposal.programName }));
@@ -114,12 +114,12 @@ test("scenario 2: the PI's proposal is written against that call", async () => {
   await odb.run(
     setProgramDescription({
       programId: proposal.programId,
-      description: "Submitted by the odbattr proposals spec.",
+      description: "Submitted by the gpp-tests proposals spec.",
     }),
   );
 
   const target = await odb.run<{ createTarget: { target: { id: string } } }>(
-    createTarget({ programId: proposal.programId, name: "odbattr proposal target" }),
+    createTarget({ programId: proposal.programId, name: "gpp-tests proposal target" }),
   );
   await odb.run(updateTargetToTestTarget({ targetId: target.createTarget.target.id }));
 

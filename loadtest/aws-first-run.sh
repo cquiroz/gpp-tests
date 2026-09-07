@@ -188,14 +188,14 @@ TOTAL_STAGES=9
 
 # Phase 2 of research/aws-load-target-options.md: the compose stack on one EC2
 # instance, driven by k6 from a second one, by hand, to find out whether AWS
-# numbers tell us anything Heroku's cannot. Everything is tagged odbattr:loadtest=1
+# numbers tell us anything Heroku's cannot. Everything is tagged gpp-tests:loadtest=1
 # — the discriminator a phase-3 IAM policy would condition on.
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 mkdir -p out
 ENV_FILE="out/aws-loadtest.env"   # gitignored, and separate from the repo's own .env
 
-TAG_KEY="odbattr:loadtest"
+TAG_KEY="gpp-tests:loadtest"
 TAG_VALUE="1"
 SPEC='ResourceType=instance,Tags=[{Key=Name,Value=REPLACED},{Key='"$TAG_KEY"',Value='"$TAG_VALUE"'}]'
 
@@ -217,7 +217,7 @@ rsync_to() {
     -e "ssh -i $PEM_PATH -o StrictHostKeyChecking=accept-new" \
     --exclude node_modules --exclude .direnv --exclude stack/.cache \
     --exclude out --exclude test-results --exclude playwright-report \
-    "$REPO_DIR/" "ubuntu@$host:~/odbattr/"
+    "$REPO_DIR/" "ubuntu@$host:~/gpp-tests/"
 }
 
 banner "GPP load test on AWS — first manual run"
@@ -253,9 +253,9 @@ if [[ "$CALLER_ARN" == *":root" ]]; then
   say "IAM policies cannot constrain root, so the tag-scoped rail this tooling is"
   say "built around would have nothing to bite on — and root can close the account."
   say ""
-  step "Enable MFA on root, then IAM → Users → create 'odbattr-loadtest'."
+  step "Enable MFA on root, then IAM → Users → create 'gpp-tests-loadtest'."
   step "Attach AdministratorAccess, create a CLI access key."
-  step "aws configure --profile odbattr, then re-run this wizard."
+  step "aws configure --profile gpp-tests, then re-run this wizard."
   exit 1
 fi
 
@@ -273,8 +273,8 @@ say "SSH is opened to your current public IP only; the target's 443 is reachable
 say "only from inside the group, i.e. from the generator."
 printf '\n'
 
-ask KEY_NAME "EC2 key pair name [odbattr-loadtest]:"
-[[ -n "$KEY_NAME" ]] || KEY_NAME="odbattr-loadtest"
+ask KEY_NAME "EC2 key pair name [gpp-tests-loadtest]:"
+[[ -n "$KEY_NAME" ]] || KEY_NAME="gpp-tests-loadtest"
 PEM_PATH="$HOME/.ssh/$KEY_NAME.pem"
 
 if awsx ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
@@ -304,11 +304,11 @@ say "subnet: $SUBNET_ID ($SUBNET_AZ) — both instances go here, so the load sta
 write_env SUBNET_ID "$SUBNET_ID"
 
 SG_ID="$(awsx ec2 describe-security-groups \
-  --filters Name=group-name,Values=odbattr-loadtest Name=vpc-id,Values="$VPC_ID" \
+  --filters Name=group-name,Values=gpp-tests-loadtest Name=vpc-id,Values="$VPC_ID" \
   --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo None)"
 if [[ "$SG_ID" == "None" || -z "$SG_ID" ]]; then
-  SG_ID="$(awsx ec2 create-security-group --group-name odbattr-loadtest \
-    --description "odbattr load test - ephemeral" --vpc-id "$VPC_ID" \
+  SG_ID="$(awsx ec2 create-security-group --group-name gpp-tests-loadtest \
+    --description "gpp-tests load test - ephemeral" --vpc-id "$VPC_ID" \
     --query GroupId --output text)"
   awsx ec2 create-tags --resources "$SG_ID" --tags "Key=$TAG_KEY,Value=$TAG_VALUE"
   say "created security group $SG_ID"
@@ -355,8 +355,8 @@ launch() {
 }
 
 if [[ -z "$(_existing TARGET_ID || true)" ]]; then
-  TARGET_ID="$(launch odbattr-target "$TARGET_TYPE" 60)"
-  GEN_ID="$(launch odbattr-generator "$GEN_TYPE" 30)"
+  TARGET_ID="$(launch gpp-tests-target "$TARGET_TYPE" 60)"
+  GEN_ID="$(launch gpp-tests-generator "$GEN_TYPE" 30)"
   say "launched target $TARGET_ID and generator $GEN_ID — waiting for them to run"
   awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
   write_env TARGET_ID "$TARGET_ID"
@@ -442,7 +442,7 @@ note "  Caps rather than reservations. Override any of them in the environment; 
 note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
 
 say "booting the stack"
-ssh_to "$TARGET_IP" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/odbattr && sg docker -c \"stack/scripts/bootstrap.sh\"'"
+ssh_to "$TARGET_IP" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
 say ""
 say "the stack is up and its seven readiness checks passed"
 pause
@@ -500,12 +500,12 @@ K6_ENV="SUITE=load \
 ODB_GRAPHQL_URL=https://odb.gpp-test.internal/odb \
 SSO_URL=https://sso.gpp-test.internal"
 
-ssh_to "$GEN_IP" "cd ~/odbattr && $K6_ENV \
+ssh_to "$GEN_IP" "cd ~/gpp-tests && $K6_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
   MIN_CHECK_RATE=0.95 k6 run k6/load.js" || {
     warn "the smoke run failed — fix this before the full profile"
-    note "  ssh -i $PEM_PATH ubuntu@$GEN_IP    then look at ~/odbattr"
-    note "  ssh -i $PEM_PATH ubuntu@$TARGET_IP then: cd odbattr && docker compose logs odb"
+    note "  ssh -i $PEM_PATH ubuntu@$GEN_IP    then look at ~/gpp-tests"
+    note "  ssh -i $PEM_PATH ubuntu@$TARGET_IP then: cd gpp-tests && docker compose logs odb"
     exit 1
   }
 say ""
@@ -536,24 +536,24 @@ fi
 confirm "Start the 40-minute run now?" || { say "Stopping here — nothing torn down."; exit 0; }
 
 # Detached, so a dropped SSH connection or a sleeping laptop cannot lose the run.
-ssh_to "$GEN_IP" "cd ~/odbattr && mkdir -p out && \
+ssh_to "$GEN_IP" "cd ~/gpp-tests && mkdir -p out && \
   nohup env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
   k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
   > out/k6-run.log 2>&1 & sleep 5" || true
 say "running detached on the generator; following the log."
 note "Ctrl-C stops the tail, not the run. Re-attach with:"
-note "  ssh -i $PEM_PATH ubuntu@$GEN_IP 'tail -f odbattr/out/k6-run.log'"
+note "  ssh -i $PEM_PATH ubuntu@$GEN_IP 'tail -f gpp-tests/out/k6-run.log'"
 printf '\n'
-ssh_to "$GEN_IP" "tail -f --pid=\$(pgrep -f 'k6 run' | head -1) odbattr/out/k6-run.log" || true
+ssh_to "$GEN_IP" "tail -f --pid=\$(pgrep -f 'k6 run' | head -1) gpp-tests/out/k6-run.log" || true
 pause "Run finished — press Enter to collect the results"
 
 # ── Stage 8 ───────────────────────────────────────────────────────────────
 stage "Collect the numbers"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 scp -i "$PEM_PATH" -o StrictHostKeyChecking=accept-new \
-  "ubuntu@$GEN_IP:~/odbattr/out/k6-summary.json" "out/k6-aws-$STAMP.json"
+  "ubuntu@$GEN_IP:~/gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json"
 scp -i "$PEM_PATH" -o StrictHostKeyChecking=accept-new \
-  "ubuntu@$GEN_IP:~/odbattr/out/k6-run.log" "out/k6-aws-$STAMP.log" 2>/dev/null || true
+  "ubuntu@$GEN_IP:~/gpp-tests/out/k6-run.log" "out/k6-aws-$STAMP.log" 2>/dev/null || true
 say "saved out/k6-aws-$STAMP.json"
 printf '\n'
 

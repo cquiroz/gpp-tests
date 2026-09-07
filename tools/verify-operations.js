@@ -103,7 +103,7 @@ const token = await authAsGuest();
 console.error(`authenticated as a guest against ${endpoints.ssoUrl}`);
 
 // Writes first, so the reads below have real ids to work with.
-const program = await check(token, createProgram({ name: "odbattr verify" }));
+const program = await check(token, createProgram({ name: "gpp-tests verify" }));
 const programId = program?.createProgram.program.id;
 if (!programId) {
   console.error("cannot continue without a program");
@@ -118,7 +118,7 @@ const created = await check(
   createObservation({
     programId,
     targetIds: targetId ? [targetId] : undefined,
-    subtitle: "odbattr verify",
+    subtitle: "gpp-tests verify",
     observingMode: gmosNorthLongSlit(),
   }),
 );
@@ -132,7 +132,7 @@ if (observationId) {
   );
   await check(
     token,
-    updateObservationSubtitle({ observationId, subtitle: "odbattr verified" }),
+    updateObservationSubtitle({ observationId, subtitle: "gpp-tests verified" }),
   );
 }
 

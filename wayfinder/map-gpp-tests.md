@@ -20,7 +20,8 @@ answering *"under expected end-of-CfP load — proposals arriving at deadline ra
 both telescopes execute sequences through Observe — does the odb keep observation
 execution within its stall budget, proposal submission usable, and regular operations
 within spec?"*, in a realistic tier and a ceiling tier, alongside the nightly trend run.
-odbattr stays frozen as the archive once the `surge` branch has moved across.
+The prototype (`cquiroz/gpp-tests`, this repo) stays frozen as the archive once the
+`surge` branch has moved across.
 
 ## Notes
 
@@ -39,7 +40,7 @@ Settled during charting (constraints for every ticket):
   scenario-parity catalog, the `run-data` branch, and the Grafana wiring survive intact.
   `lucuma-odb` gets a dispatch step at most.
 - Repo: `gemini-hlsw/gpp-tests`, **public**, fresh history; README points back here.
-  Until then, stress work lands on the **`surge` branch of odbattr**, mirrored to
+  Until then, stress work lands on the **`surge` branch of this repo**, pushed to
   `cquiroz/gpp-tests` for CI, and migrates with main in one move (012).
 - The load suite carries **two profiles, both claims stand**: the nightly trend run
   and the on-demand surge run (the flagship of this effort).
@@ -119,7 +120,8 @@ Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automati
 - **Dev-process integration in gpp-tests** — the per-merge Explore lane, Slack alerts,
   and promote gate decided in [ticket 010](tickets/010-decide-dev-process-integration.md)
   still need to be built, after the stress work.
-- **Archiving odbattr on GitHub** — once gpp-tests is green and the suites are gone.
+- **Archiving the prototype (`cquiroz/gpp-tests`) on GitHub** — once the org repo is
+  green and the suites are gone.
 - **Distributed k6 / dedicated generator** — only if the surge scale outgrows one
   generator instance.
 

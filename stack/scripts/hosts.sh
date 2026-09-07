@@ -29,9 +29,9 @@ line="127.0.0.1 ${missing[*]}"
 log "adding to $HOSTS_FILE: $line"
 
 if [[ -w "$HOSTS_FILE" ]]; then
-  printf '\n# odbattr ephemeral stack\n%s\n' "$line" >> "$HOSTS_FILE"
+  printf '\n# gpp-tests ephemeral stack\n%s\n' "$line" >> "$HOSTS_FILE"
 elif command -v sudo >/dev/null 2>&1; then
-  printf '\n# odbattr ephemeral stack\n%s\n' "$line" | sudo tee -a "$HOSTS_FILE" >/dev/null
+  printf '\n# gpp-tests ephemeral stack\n%s\n' "$line" | sudo tee -a "$HOSTS_FILE" >/dev/null
 else
   die "cannot write $HOSTS_FILE — add this line manually:
   $line"

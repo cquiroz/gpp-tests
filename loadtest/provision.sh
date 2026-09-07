@@ -89,7 +89,7 @@ command -v node >/dev/null   || die "node is required to validate the service JW
 
 heroku auth:whoami >/dev/null 2>&1 \
   || die "not logged in to Heroku. Run \`heroku login\`, or export a HEROKU_API_KEY
-    (\`heroku authorizations:create -d 'odbattr provisioning'\`)."
+    (\`heroku authorizations:create -d 'gpp-tests provisioning'\`)."
 
 TEAM="${HEROKU_TEAM:-}"
 [[ -n "$TEAM" ]] || die "HEROKU_TEAM is required — the team that owns the lucuma-*-dev apps.
@@ -189,14 +189,14 @@ elif [[ -z "$APPLY" ]]; then
 else
   GNUPGHOME="$(mktemp -d)"; export GNUPGHOME; chmod 700 "$GNUPGHOME"
   trap 'rm -rf "$GNUPGHOME"' EXIT
-  PASSPHRASE="odbattr-loadtest-$(date +%s)"
+  PASSPHRASE="gpp-tests-loadtest-$(date +%s)"
 
   log "generating an RSA-2048 keypair for $SSO_APP"
   gpg --batch --quiet --pinentry-mode loopback --passphrase "$PASSPHRASE" \
-    --quick-generate-key "odbattr loadtest SSO <odbattr@example.com>" rsa2048 sign,cert never
-  PUBLIC_KEY="$(gpg --batch --quiet --armor --export odbattr@example.com)"
+    --quick-generate-key "gpp-tests loadtest SSO <gpp-tests@example.com>" rsa2048 sign,cert never
+  PUBLIC_KEY="$(gpg --batch --quiet --armor --export gpp-tests@example.com)"
   PRIVATE_KEY="$(gpg --batch --quiet --armor --pinentry-mode loopback \
-    --passphrase "$PASSPHRASE" --export-secret-keys odbattr@example.com)"
+    --passphrase "$PASSPHRASE" --export-secret-keys gpp-tests@example.com)"
   [[ -n "$PUBLIC_KEY" && -n "$PRIVATE_KEY" ]] || die "gpg produced an empty key"
 
   set_config "$SSO_APP" \
@@ -223,8 +223,8 @@ set_config "$SSO_APP" \
   "LUCUMA_SSO_COOKIE_DOMAIN=$SSO_HOST" \
   "LUCUMA_SSO_HOSTNAME=$SSO_HOST" \
   "LUCUMA_ODB_HOSTNAME=$ODB_HOST" \
-  "LUCUMA_ORCID_CLIENT_ID=odbattr-not-a-real-client" \
-  "LUCUMA_ORCID_CLIENT_SECRET=odbattr-not-a-real-secret"
+  "LUCUMA_ORCID_CLIENT_ID=gpp-tests-not-a-real-client" \
+  "LUCUMA_ORCID_CLIENT_SECRET=gpp-tests-not-a-real-secret"
 
 log "config: $ODB_APP (shared by the web and obscalc process types)"
 ODB_CONFIG=(
@@ -235,15 +235,15 @@ ODB_CONFIG=(
   "EXPLORE_URL=https://$ODB_HOST"
   "ODB_MAX_CONNECTIONS=$ODB_MAX_CONNECTIONS"
   # Required to boot, never exercised by the load scenarios (ODB-README).
-  "CLOUDCUBE_ACCESS_KEY_ID=odbattr"
-  "CLOUDCUBE_SECRET_ACCESS_KEY=odbattr"
-  "CLOUDCUBE_URL=https://cube.example.com/odbattr"
+  "CLOUDCUBE_ACCESS_KEY_ID=gpp-tests"
+  "CLOUDCUBE_SECRET_ACCESS_KEY=gpp-tests"
+  "CLOUDCUBE_URL=https://cube.example.com/gpp-tests"
   "FILE_UPLOAD_MAX_MB=10"
-  "MAILGUN_API_KEY=odbattr"
+  "MAILGUN_API_KEY=gpp-tests"
   "MAILGUN_DOMAIN=mail.example.com"
-  "MAILGUN_WEBHOOK_SIGNING_KEY=odbattr"
-  "INVITATION_SENDER_EMAIL=odbattr@example.com"
-  "PROPOSAL_EMAIL_DEFAULT=odbattr@example.com"
+  "MAILGUN_WEBHOOK_SIGNING_KEY=gpp-tests"
+  "INVITATION_SENDER_EMAIL=gpp-tests@example.com"
+  "PROPOSAL_EMAIL_DEFAULT=gpp-tests@example.com"
 )
 if [[ -n "$EXISTING_PUBLIC_KEY" ]]; then
   ODB_CONFIG+=("ODB_SSO_PUBLIC_KEY=$EXISTING_PUBLIC_KEY")
@@ -260,7 +260,7 @@ if [[ -n "${ODB_OTEL_ENDPOINT:-}" && -n "${ODB_OTEL_KEY:-}" ]]; then
     "ODB_ENVIRONMENT=${ODB_ENVIRONMENT:-staging}"
     "ODB_OTEL_ENDPOINT=$ODB_OTEL_ENDPOINT"
     "ODB_OTEL_KEY=$ODB_OTEL_KEY"
-    "OTEL_RESOURCE_ATTRIBUTES=environment=loadtest,service.namespace=odbattr"
+    "OTEL_RESOURCE_ATTRIBUTES=environment=loadtest,service.namespace=gpp-tests"
   )
   log "OpenTelemetry enabled (environment=loadtest)"
 else

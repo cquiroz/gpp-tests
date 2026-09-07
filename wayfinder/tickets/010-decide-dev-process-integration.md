@@ -57,13 +57,13 @@ Grilled 2026-08-27/29. New glossary terms in `CONTEXT.md`: **per-merge run**,
   contract"); adoption → the per-merge commit status + Slack presence; discoverability →
   statuses link here, plus a short docs pointer in `lucuma-apps`.
 - **Reserved, not rejected — the consume model**: `lucuma-apps` CI checking out
-  `odbattr@<pinned-ref>` and running the journey inside their Actions. Parked until
+  `gpp-tests@<pinned-ref>` and running the journey inside their Actions. Parked until
   pre-merge checks come out of the fog; that is when running in their CI (against a PR
   build, before merge) beats dispatching out, and it needs a `HEROKU_API_KEY` upstream,
   which the v1 footprint refuses.
 - **Upstream footprint, frozen**: bundle artifact + one dispatch step + testid contract
   and check + docs pointer in `lucuma-apps`; nothing in `lucuma-odb` beyond the standing
-  JwtLifetime ask; no test code, no odbattr logic, one dispatch token upstream.
+  JwtLifetime ask; no test code, no gpp-tests logic, one dispatch token upstream.
 - **Sequencing honored**: the map's deferral stands for anything *blocking* — M4 and one
   real red-path drill come first — while the advisory per-merge lane proceeds now,
   because it generates exactly the run history the proving period needs.

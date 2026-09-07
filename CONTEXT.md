@@ -73,5 +73,6 @@
   the run.
 - **gpp-tests** — the production testing repository (`gemini-hlsw/gpp-tests`, public)
   that graduates this prototype; all three suites live there, separated internally with
-  the load suite as the front door. This repo (odbattr) remains the frozen archive of
-  the wayfinding and research once the surge branch has moved across.
+  the load suite as the front door. This repo is its prototype (`cquiroz/gpp-tests`), kept
+  as the frozen archive of the wayfinding and research once the surge branch has moved
+  across.

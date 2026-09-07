@@ -151,7 +151,7 @@ heroku authorizations:create -d 'gpp-tests CI'
 ## Provisioning
 
 ```bash
-heroku authorizations:create -d 'odbattr provisioning'   # if the CLI is not logged in
+heroku authorizations:create -d 'gpp-tests provisioning'   # if the CLI is not logged in
 export HEROKU_API_KEY=...
 
 HEROKU_TEAM=<the team that owns lucuma-*-dev> loadtest/provision.sh          # dry run

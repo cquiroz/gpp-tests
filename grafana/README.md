@@ -44,7 +44,7 @@ Metric labels are capped at `suite`, `scenario`, `operation` and `status`
 (`lib/tags.js` throws on anything else). The free tier allows 10 000 active series and that
 budget is shared with production metrics, so run identity lives on **annotations** instead:
 every run posts a start annotation, an end annotation tagged with its outcome, and one per
-threshold breach — all tagged `odbattr`, the suite, the environment and the `testid`.
+threshold breach — all tagged `gpp-tests`, the suite, the environment and the `testid`.
 
 To slice metrics by run for a one-off investigation, run k6 with `K6_TAG_TESTID=true`; do not
 leave it on.
@@ -103,7 +103,7 @@ payload is printed to the log instead. Neither turns a green run red.
 
 Metrics and traces are correlated by **time window plus `environment`**, not by exemplar:
 
-1. Find the run's start/end annotation on the dashboard (tags: `odbattr`, `load` or
+1. Find the run's start/end annotation on the dashboard (tags: `gpp-tests`, `load` or
    `regression`).
 2. In Tempo, query that window with the environment the traffic carried, e.g.
    `{ resource.environment = "loadtest" && duration > 2s }`.

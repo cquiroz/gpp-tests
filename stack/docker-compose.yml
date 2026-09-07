@@ -26,21 +26,21 @@ x-odb-env: &odb-env
   CORS_OVER_HTTPS: "true"
   EXPLORE_URL: https://explore.${GPP_TEST_DOMAIN:-gpp-test.internal}
   # Dummy S3/Mailgun values: required to boot, unused by the v1 scenarios (ODB-README).
-  CLOUDCUBE_ACCESS_KEY_ID: odbattr
-  CLOUDCUBE_SECRET_ACCESS_KEY: odbattr
-  CLOUDCUBE_URL: https://cube.example.com/odbattr
+  CLOUDCUBE_ACCESS_KEY_ID: gpp-tests
+  CLOUDCUBE_SECRET_ACCESS_KEY: gpp-tests
+  CLOUDCUBE_URL: https://cube.example.com/gpp-tests
   FILE_UPLOAD_MAX_MB: "10"
-  MAILGUN_API_KEY: odbattr
+  MAILGUN_API_KEY: gpp-tests
   MAILGUN_DOMAIN: mail.example.com
-  MAILGUN_WEBHOOK_SIGNING_KEY: odbattr
-  INVITATION_SENDER_EMAIL: odbattr@example.com
-  PROPOSAL_EMAIL_DEFAULT: odbattr@example.com
+  MAILGUN_WEBHOOK_SIGNING_KEY: gpp-tests
+  INVITATION_SENDER_EMAIL: gpp-tests@example.com
+  PROPOSAL_EMAIL_DEFAULT: gpp-tests@example.com
   # `local` keeps OpenTelemetry off; bootstrap flips this to `dev` when ODB_OTEL_* are set,
   # because a non-local environment makes both OTel variables mandatory (spec §7).
   ODB_ENVIRONMENT: ${ODB_ENVIRONMENT:-local}
   ODB_OTEL_ENDPOINT: ${ODB_OTEL_ENDPOINT:-}
   ODB_OTEL_KEY: ${ODB_OTEL_KEY:-}
-  OTEL_RESOURCE_ATTRIBUTES: environment=${OTEL_ENVIRONMENT:-ephemeral},service.namespace=odbattr
+  OTEL_RESOURCE_ATTRIBUTES: environment=${OTEL_ENVIRONMENT:-ephemeral},service.namespace=gpp-tests
 
 # Memory limits, and why they are not optional.
 #
@@ -130,8 +130,8 @@ services:
       LUCUMA_ODB_HOSTNAME: odb.${GPP_TEST_DOMAIN:-gpp-test.internal}
       # ORCID credentials are required to boot in every environment but are only exercised
       # by the interactive standard-user login, which v1 never uses (spec §4).
-      LUCUMA_ORCID_CLIENT_ID: odbattr-not-a-real-client
-      LUCUMA_ORCID_CLIENT_SECRET: odbattr-not-a-real-secret
+      LUCUMA_ORCID_CLIENT_ID: gpp-tests-not-a-real-client
+      LUCUMA_ORCID_CLIENT_SECRET: gpp-tests-not-a-real-secret
     expose:
       - "8082"
 

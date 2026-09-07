@@ -129,8 +129,8 @@ export function defineJourney(identity: JourneyIdentity): void {
 
   const t = (title: string) => `${title}${identity.titleSuffix}`;
 
-  const SUBTITLE = "odbattr scenario-3";
-  const EDITED_SUBTITLE = "odbattr scenario-4 edited";
+  const SUBTITLE = "gpp-tests scenario-3";
+  const EDITED_SUBTITLE = "gpp-tests scenario-4 edited";
 
   let page: Page;
   let odb: OdbClient;

@@ -26,7 +26,7 @@ require_cmd() {
 # environment are identical everywhere (including teardown).
 compose() {
   docker compose \
-    --project-name "${COMPOSE_PROJECT_NAME:-odbattr}" \
+    --project-name "${COMPOSE_PROJECT_NAME:-gpp-tests}" \
     --file "$STACK_DIR/docker-compose.yml" \
     "$@"
 }

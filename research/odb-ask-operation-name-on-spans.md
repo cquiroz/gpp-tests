@@ -1,7 +1,7 @@
 # Ask for the odb team: put the GraphQL operation name on odb spans
 
 *Written 2026-09-07 for ticket 019 in `wayfinder/`. Carry this to `gemini-hlsw/lucuma-odb`
-as an issue or a PR conversation; nothing here depends on odbattr.*
+as an issue or a PR conversation; nothing here depends on gpp-tests.*
 
 ## The ask, in one sentence
 
@@ -14,7 +14,7 @@ grouped by operation.
 
 Two consumers, both blocked today:
 
-1. **The next real Call for Proposals.** The surge load model (odbattr ticket 015/020)
+1. **The next real Call for Proposals.** The surge load model (gpp-tests ticket 015/020)
    is built on assumptions — realistic peak ≈ 100–250 submission mutations per hour,
    500/h as a stress ceiling — because no real standard CfP has run on GPP yet (the first
    is 2027B at the earliest). The capture plan for that deadline

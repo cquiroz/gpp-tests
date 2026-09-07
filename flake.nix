@@ -1,5 +1,5 @@
 {
-  description = "odbattr — automated cross-system testing for the GPP (lucuma) ecosystem";
+  description = "gpp-tests — automated cross-system testing for the GPP (lucuma) ecosystem";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -12,7 +12,7 @@
     {
       devShells = forEachSystem (pkgs: {
         default = pkgs.mkShell {
-          name = "odbattr";
+          name = "gpp-tests";
 
           packages = with pkgs; [
             # The suites themselves: Node runs the unit tests, Playwright and the CLI tools
@@ -64,7 +64,7 @@
             fi
 
             if [ -z "''${ODBATTR_QUIET:-}" ]; then
-              echo "odbattr · node $(node --version) · $(k6 version | head -1)"
+              echo "gpp-tests · node $(node --version) · $(k6 version | head -1)"
 
               if ! command -v docker >/dev/null 2>&1; then
                 echo "  ⚠ docker is not on PATH — stack/scripts/bootstrap.sh needs it"

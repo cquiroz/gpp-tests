@@ -23,7 +23,7 @@ mkdir -p "$KEY_DIR"
 chmod 700 "$KEY_DIR"
 
 # Not a secret by any stretch — SSO simply requires a passphrase on the private key.
-echo "odbattr-test-only" > "$PASSPHRASE_FILE"
+echo "gpp-tests-test-only" > "$PASSPHRASE_FILE"
 
 GNUPGHOME="$(mktemp -d)"
 export GNUPGHOME
@@ -33,12 +33,12 @@ chmod 700 "$GNUPGHOME"
 log "generating a throwaway SSO GPG keypair (test-only, per run)"
 gpg --batch --quiet --pinentry-mode loopback \
   --passphrase-file "$PASSPHRASE_FILE" \
-  --quick-generate-key "odbattr test SSO <odbattr@example.com>" rsa2048 sign,cert never
+  --quick-generate-key "gpp-tests test SSO <gpp-tests@example.com>" rsa2048 sign,cert never
 
-gpg --batch --quiet --armor --export "odbattr@example.com" > "$KEY_DIR/sso-public.asc"
+gpg --batch --quiet --armor --export "gpp-tests@example.com" > "$KEY_DIR/sso-public.asc"
 gpg --batch --quiet --armor --pinentry-mode loopback \
   --passphrase-file "$PASSPHRASE_FILE" \
-  --export-secret-keys "odbattr@example.com" > "$KEY_DIR/sso-private.asc"
+  --export-secret-keys "gpp-tests@example.com" > "$KEY_DIR/sso-private.asc"
 
 chmod 600 "$KEY_DIR"/sso-*.asc "$PASSPHRASE_FILE"
 
