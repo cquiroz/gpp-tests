@@ -4,14 +4,16 @@ title: "Implement the surge profile and its on-demand workflow"
 labels: [wayfinder:task]
 status: open
 assignee:
-blocked-by: [015, 016, 017]
+blocked-by: [016, 017, 021, 022, 023]
 ---
 
 ## Question
 
-Build the surge run: the k6 profile implementing the workload model (015) against the
-provisioned target (016) using the standard-user machinery (017); a `workflow_dispatch`
-workflow (on-demand cadence) that releases/resets the target, runs the surge, and
-publishes results with run identity + Grafana annotations like the other suites; the
-pass verdict wired to the regular-ops-usability thresholds. Prove it with one full
-real run. Resolution records the run link and the verdict machinery.
+*Reshaped by ticket 020.* Compose the surge run from its layers: the regular-ops guest
+mix (ramping VUs), the proposal loop (017, arrival rate), Explore-tab and Observe-browser
+subscriber VUs (022), and Observe execution VUs (021, constant VUs), with the two tiers
+and the 75-minute shape from 020 selectable at dispatch. Wire the surge SLO file and
+verdict (023). The `workflow_dispatch` workflow boots the AWS target (016), runs the
+surge from the generator, and publishes results with run identity and Grafana
+annotations like the other suites. Prove it with one full real run per tier. Resolution
+records the run links and each class's verdict.
