@@ -114,6 +114,16 @@ websocket client and subscriber VUs (022), standard users and the proposal loop 
 surge profile with SLO file and verdict (018, 023). AWS boot automation (016) runs as a
 parallel track; full-scale runs start when the tracks meet.
 
+### Addendum 2026-09-07 — the odb changed under the model the same day
+
+The nightly regression of 2026-09-07 went red: the `-dev` odb now refuses `setProposalStatus`
+→ SUBMITTED without a Science and a Team attachment (the rule Explore alone enforced when
+the proposals spec was written). Consequences folded into the plan: the proposal loop (017)
+carries **two REST uploads per proposal**, the ephemeral stack and the load target need an
+**object store** (new ticket 028, blocking 017), and the e2e scenario 4 now asserts the
+refusal until 028 restores the lifecycle. The incident is the argument for the suite: a
+rule change announced itself within a day, in the failure text.
+
 ### Out of scope, still
 
 Absolute-capacity hunting (a knee run is not a standing profile), load-testing SSO,

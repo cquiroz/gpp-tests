@@ -67,6 +67,14 @@ x-odb-env: &odb-env
 #
 #   ODB_MEM_LIMIT=4g OBSCALC_MEM_LIMIT=2g npm run stack:up
 #
+# Postgres is the exception to "minimum": at 1g a backend was SIGKILLed three minutes into a
+# plain e2e run on macOS (2026-09-07, Docker Desktop 8 GiB VM), Postgres went through crash
+# recovery, and every pooled connection in the odb and SSO died with it — the symptoms were
+# HTTP 500s and "Broken pipe" in the odb log, nowhere near the database. Measured peaks that
+# day: 1.6 GiB during e2e, 1.4 GiB during a 10-VU load run. The default is therefore 2g; the
+# stack's limits then total ~7.5 GiB, so an 8 GiB VM has no room to raise anything else
+# without lowering something.
+#
 # The totals assume a ~8 GiB Docker VM. Check yours with `docker info` before raising several
 # at once; over-committing brings the kills back.
 #
@@ -75,7 +83,7 @@ x-odb-env: &odb-env
 services:
   postgres:
     image: postgres:15
-    mem_limit: ${PG_MEM_LIMIT:-1g}
+    mem_limit: ${PG_MEM_LIMIT:-2g}
     environment:
       POSTGRES_USER: ${PG_USER:-jimmy}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-banana}

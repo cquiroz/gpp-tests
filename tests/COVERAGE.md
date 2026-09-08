@@ -25,9 +25,9 @@ reorder from real usage knowledge.
 | Constraint sets | IQ, cloud extinction, sky background, water vapor, elevation | none | — | P1 |
 | Timing windows | Create/edit windows, repeat rules | none | — | P1 |
 | Observation groups | Scheduling groups, AND/OR groups, drag into groups | none | — | P1 |
-| Attachments | Finder charts, proposal attachments upload/list | none | — | P2 — needs an object store, not just fixtures: the ODB runs with dummy Cloudcube credentials (`stack/docker-compose.yml`), so there is nowhere to upload. This also gates proposal *submission through the UI* (see Proposals) |
+| Attachments | Finder charts, proposal attachments upload/list | none | — | **P0 since 2026-09-07** — needs an object store, not just fixtures: the ODB runs with dummy Cloudcube credentials (`stack/docker-compose.yml`), so there is nowhere to upload. This now gates proposal *submission at both layers*: the ODB itself requires a Science and a Team attachment (see Proposals; wayfinder ticket 028) |
 | Program users & invitations | Invite, roles, revoke | partial (a PI's partner link is set and read back) | `proposals.spec.ts` scenario 2 | P1 — the unblocker landed (fabricated standard users + session injection); invite/revoke is now ordinary work |
-| Proposals | Create, partners/time split, submit | covered (create, splits, submit + retract; UI editor and its validation. UI *submit* blocked — see note) | `proposals.spec.ts` | P1 |
+| Proposals | Create, partners/time split, submit | partial (create, splits, UI editor and its validation, the ODB's refusal to submit without attachments). Submit + retract lifecycle blocked on the object store — see note | `proposals.spec.ts` | P1 |
 | User preferences persistence | Grid layouts, tile states surviving reload (Hasura path) | partial (prefs socket proven alive by shell render) | `journey.spec.ts` scenario 1 | P1 |
 | New-user signup | ORCID flow | none | — | P2 (mock-ORCID tier only; the real-ORCID leg stays a manual smoke test by decision — [decision note](../research/orcid-auth-testing-strategy.md)) |
 
@@ -48,9 +48,13 @@ rules and Explore's diverge — worth writing down, because the divergence is th
   (`explore/model/Proposal.scala`). The fixture satisfies everything except the attachments,
   so Explore correctly leaves "Submit Proposal" disabled and names the two missing files.
   Scenario 3 asserts exactly that, which is real behaviour rather than a stand-in.
-- **So submission is asserted through the ODB** (scenario 4: submit, read back the status and
-  the minted proposal reference, retract, read back). Driving the button in a browser needs an
-  object store the ephemeral stack does not have — the Attachments row above.
+- **Since 2026-09-07 the ODB requires the two attachments as well.** The nightly caught it:
+  scenario 4 used to submit and retract through the ODB (status, minted reference, retract)
+  and went red with "Science attachment is required" / "Team attachment is required" the day
+  the `-dev` ODB adopted Explore's rule. Scenario 4 now asserts that refusal — exactly two
+  errors, naming exactly those files — and the lifecycle is no longer exercised anywhere in
+  this stack until it has an object store (wayfinder ticket 028), which is also what the
+  surge run's proposal loop needs.
 
 ## Ground rules for new specs
 

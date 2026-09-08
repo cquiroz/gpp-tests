@@ -66,6 +66,9 @@ Settled during charting (constraints for every ticket):
   free stack's budget is production's.
 - Runs fire **on demand and before promoting the odb** (manual dispatch with digests);
   never per merge. The ticket 010 dev-process items wait behind the stress work.
+- **Proposal submission needs two attachments** (odb rule since 2026-09-07, caught by the
+  nightly). The stack and the load target need an object store (028) before any layer can
+  submit; the surge's proposal loop carries two uploads per proposal.
 
 ## Decisions so far
 
@@ -101,14 +104,16 @@ Settled during charting (constraints for every ticket):
 ## Frontier now
 
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation),
-**017** (standard users + proposal loop), **021** (Observe execution VUs + seed),
-**022** (graphql-ws client + subscribers), **023** (surge SLOs + verdict), **024**
-(telemetry stack, HITL), **027** (read production sizing, HITL). Order of build:
-021 → 022 → 017 → 018/023, developed locally; 016 in parallel.
+**021** (Observe execution VUs + seed), **022** (graphql-ws client + subscribers), **023**
+(surge SLOs + verdict), **024** (telemetry stack, HITL), **027** (read production sizing,
+HITL), **028** (object store + attachment uploads — now blocks 017). Order of build:
+021 → 022 → 028 → 017 → 018/023, developed locally; 016 in parallel.
 
 ## Not yet specified
 
 - **Subscription round-trip SLO** — a provisional figure once 022 measures one.
+- **Attachment upload leg of the surge model** — sizes and count per submission, once 028
+  gives the stack somewhere to upload.
 - **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers;
   needs a correlation channel k6 does not have. Follow-up after v1.
 - **Trend-run threshold recalibration** — baselines reset once the real target exists.

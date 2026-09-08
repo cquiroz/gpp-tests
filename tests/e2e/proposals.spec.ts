@@ -14,7 +14,7 @@ import {
   setProposalStatus,
   updateTargetToTestTarget,
 } from "../../lib/odb-operations.js";
-import { eventually } from "../support/odb.js";
+import { GraphQLError, eventually } from "../support/odb.js";
 import * as ui from "../support/selectors.js";
 import { StandardSession, loadStandardUser } from "../support/standard-users.js";
 
@@ -31,8 +31,11 @@ import { StandardSession, loadStandardUser } from "../support/standard-users.js"
  *   pi     →  owns the program, writes the proposal, submits it
  *
  * The split between API and UI follows the journey's (README, deviation 6): the fixture is
- * seeded through GraphQL, and the behaviour under test — submit, then retract — goes through
- * Explore's own buttons with a GraphQL read-back after each.
+ * seeded through GraphQL; the behaviour under test is the proposal editor's validation in
+ * Explore (scenario 3) and the ODB's own submission rule (scenario 4), each with a GraphQL
+ * read-back. Since 2026-09-07 both layers refuse a proposal without its two attachments,
+ * and the ephemeral stack has no object store to upload them to — so the submit/retract
+ * lifecycle is not exercised here until wayfinder ticket 028 lands.
  */
 
 const staff = loadStandardUser("TEST_STAFF");
@@ -221,8 +224,8 @@ test("scenario 3: Explore shows the proposal, and refuses to submit it incomplet
     //
     // They cannot be satisfied in the ephemeral stack: the ODB is configured with dummy
     // Cloudcube credentials (`stack/docker-compose.yml`), so there is no object store to
-    // upload to. That is the "Attachments" row of tests/COVERAGE.md, and it gates the UI
-    // submit leg rather than proposals as a whole — scenario 4 covers the lifecycle instead.
+    // upload to. That is the "Attachments" row of tests/COVERAGE.md. Since 2026-09-07 the
+    // ODB enforces the same two attachments itself — scenario 4 asserts that refusal.
     await expect(ui.submitProposalButton(page)).toBeDisabled();
     await expect(page.getByText(/science attachment is required/i)).toBeVisible();
     await expect(page.getByText(/team attachment is required/i)).toBeVisible();
@@ -231,47 +234,45 @@ test("scenario 3: Explore shows the proposal, and refuses to submit it incomplet
   });
 });
 
-test("scenario 4: the proposal submits and retracts through the ODB", async () => {
+test("scenario 4: the ODB refuses to submit the proposal without its attachments", async () => {
   const programId = proposal.programId!;
   const odb = piSession.client();
 
-  // The ODB's own rules are a subset of Explore's: it does not require attachments, and it
-  // accepts this proposal. So the lifecycle is asserted here at the API level (tier 2 of
-  // research/orcid-auth-testing-strategy.md), which is what the coverage map asks proposals
-  // for; the browser leg above stops where the stack's object store does.
-  await test.step("submit", async () => {
+  // Until 2026-09-06 the ODB's rules were a subset of Explore's: it did not require
+  // attachments, it accepted this proposal, and this scenario submitted and retracted it
+  // (SUBMITTED, a minted reference, NOT_SUBMITTED). The nightly of 2026-09-07 went red when
+  // the `-dev` ODB adopted Explore's rule, refusing with the wording asserted below. The
+  // fixture is complete in every other respect — scenarios 2 and 3 prove it — so the only
+  // thing the ODB may name is the two attachments, and it must name both.
+  //
+  // The lifecycle returns once the stack has an object store to upload into (wayfinder
+  // ticket 028). Until then submission cannot be exercised anywhere in this stack, and the
+  // refusal is the ODB-level contract under test.
+  await test.step("submit is refused, naming exactly the two attachments", async () => {
+    let error: unknown;
+    try {
+      await odb.run(setProposalStatus({ programId, status: "SUBMITTED" }));
+    } catch (e) {
+      error = e;
+    }
+    expect(error, "the ODB accepted a proposal with no attachments").toBeInstanceOf(
+      GraphQLError,
+    );
+    const details = (error as GraphQLError).errors.map((e) => JSON.stringify(e)).join("\n");
+    expect(details).toMatch(/science attachment is required/i);
+    expect(details).toMatch(/team attachment is required/i);
+    // Two errors, no more: any third one would mean the fixture stopped satisfying a rule.
+    expect((error as GraphQLError).errors).toHaveLength(2);
+  });
+
+  await test.step("read back: still not submitted, no reference minted", async () => {
     const data = await odb.run<{
-      setProposalStatus: { program: { proposalStatus: string } };
-    }>(setProposalStatus({ programId, status: "SUBMITTED" }));
-    expect(data.setProposalStatus.program.proposalStatus).toBe("SUBMITTED");
-  });
-
-  await test.step("read back: submitted, and a reference was assigned", async () => {
-    const program = await eventually(
-      "the submitted proposal to carry a reference",
-      async () => {
-        const data = await odb.run<{
-          program: {
-            proposalStatus: string;
-            proposal: { reference: { label: string } | null };
-          };
-        }>(proposalDetails({ programId }));
-        return data.program.proposal?.reference?.label ? data.program : undefined;
-      },
-      { timeoutMs: 60_000, intervalMs: 2_000 },
-    );
-
-    expect(program.proposalStatus).toBe("SUBMITTED");
-    // A reference is only minted on submission, once the call has a semester — the strongest
-    // evidence available that this was a real submission and not just a status flag.
-    expect(program.proposal!.reference!.label).toContain(TEST_CALL.semester);
-  });
-
-  await test.step("retract, and read back", async () => {
-    await odb.run(setProposalStatus({ programId, status: "NOT_SUBMITTED" }));
-    const data = await odb.run<{ program: { proposalStatus: string } }>(
-      proposalDetails({ programId }),
-    );
+      program: {
+        proposalStatus: string;
+        proposal: { reference: { label: string } | null } | null;
+      };
+    }>(proposalDetails({ programId }));
     expect(data.program.proposalStatus).toBe("NOT_SUBMITTED");
+    expect(data.program.proposal?.reference ?? null).toBeNull();
   });
 });
