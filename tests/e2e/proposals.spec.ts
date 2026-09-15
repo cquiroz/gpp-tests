@@ -10,7 +10,7 @@ import {
   observationWorkflow,
   proposalDetails,
   setProgramDescription,
-  setProgramUserPartner,
+  setProgramUserDetails,
   setProposalStatus,
   updateTargetToTestTarget,
 } from "../../lib/odb-operations.js";
@@ -113,7 +113,7 @@ test("scenario 2: the PI's proposal is written against that call", async () => {
   // The second is why this is not a one-line fixture: an *empty* observation is undefined, so
   // the proposal needs a real one — the journey's target and GMOS long-slit configuration,
   // which is the cheapest thing the ODB will call defined.
-  await odb.run(setProgramUserPartner({ programId: proposal.programId }));
+  await odb.run(setProgramUserDetails({ programId: proposal.programId }));
   await odb.run(
     setProgramDescription({
       programId: proposal.programId,
@@ -243,7 +243,10 @@ test("scenario 4: the ODB refuses to submit the proposal without its attachments
   // (SUBMITTED, a minted reference, NOT_SUBMITTED). The nightly of 2026-09-07 went red when
   // the `-dev` ODB adopted Explore's rule, refusing with the wording asserted below. The
   // fixture is complete in every other respect — scenarios 2 and 3 prove it — so the only
-  // thing the ODB may name is the two attachments, and it must name both.
+  // thing the ODB may name is the two attachments, and it must name both. That strictness
+  // is the point: on 2026-09-10 the odb added two more submission rules (every investigator
+  // needs an educational status and an affiliation) and this assertion caught them the same
+  // night, as four errors instead of two; the fixture now sets both (`setProgramUserDetails`).
   //
   // The lifecycle returns once the stack has an object store to upload into (wayfinder
   // ticket 028). Until then submission cannot be exercised anywhere in this stack, and the

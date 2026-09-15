@@ -41,8 +41,10 @@ rules and Explore's diverge — worth writing down, because the divergence is th
   refusal for a PI as well as the success for staff.
 - **The ODB requires** a matching call type, partner splits summing to 100, a Band 3 decision,
   a PI affiliated with a partner, and observations that are *defined* — an empty observation is
-  refused with "contains undefined observations". All of it is in the fixture, and the
-  observation's workflow state is polled rather than assumed.
+  refused with "contains undefined observations". Since 2026-09-10 also **an educational
+  status and an affiliation on every investigator** (caught by the nightly as two extra
+  errors on scenario 4). All of it is in the fixture, and the observation's workflow state is
+  polled rather than assumed.
 - **Explore requires more**: title, abstract, category, every investigator's partner, the PI's
   email, splits, defined observations — **and an uploaded Science and Team attachment**
   (`explore/model/Proposal.scala`). The fixture satisfies everything except the attachments,

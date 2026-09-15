@@ -19,6 +19,8 @@ a Team attachment** (the odb refuses to submit without them since 2026-09-07 —
 uploads per proposal, through the odb's attachment endpoint into the stack's object store,
 ticket 028), submits, and churns through retract/resubmit — driven by an **arrival-rate
 executor** so the tier's submissions-per-hour figure (realistic 100–250, ceiling 500) is
-literal. Upload size and count per submission become part of the workload model. Proposal
+literal. Upload size and count per submission become part of the workload model. Each PI also needs
+a partner, an educational status and an affiliation set on the program user before the odb
+will submit (rules of 2026-09-07/10 — `setProgramUserDetails` in the operations library). Proposal
 scenarios enter the scenario-parity catalog alongside the existing e2e proposal specs.
 Developable against the local compose stack.
