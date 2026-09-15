@@ -85,13 +85,28 @@ jobs:
 
       - uses: grafana/setup-k6-action@v1
 
+      # Same remote-write wiring as performance.yml, so the regression suite's dozen series
+      # (per-scenario pass/fail and duration, read/write p95 at one user) reach the dashboard;
+      # without it the "Regression scenario pass rate" panel is blank by construction.
       - name: k6 regression variants
         id: k6
         continue-on-error: true
+        env:
+          K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.GC_PROM_RW_URL }}
+          K6_PROMETHEUS_RW_USERNAME: ${{ secrets.GC_PROM_INSTANCE_ID }}
+          K6_PROMETHEUS_RW_PASSWORD: ${{ secrets.GC_PROM_TOKEN }}
+          K6_PROMETHEUS_RW_TREND_STATS: "avg,p(95),p(99)"
+          K6_PROMETHEUS_RW_STALE_MARKERS: "true"
         run: |
           mkdir -p out
           source stack/.env.generated
-          k6 run --summary-export out/k6-summary.json k6/regression.js
+          output=()
+          if [[ -n "$K6_PROMETHEUS_RW_SERVER_URL" ]]; then
+            output=(-o experimental-prometheus-rw)
+          else
+            echo "::notice::Grafana Cloud remote-write is not configured; running without live metrics"
+          fi
+          k6 run "${output[@]}" --summary-export out/k6-summary.json k6/regression.js
 
       # The ledger branch does not exist until the first run publishes to it, and asking
       # actions/checkout for a missing ref costs three failed fetches and ~25s before giving

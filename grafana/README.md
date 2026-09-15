@@ -21,6 +21,23 @@ paid Grafana Cloud k6 product.
    this tenant ingests native histograms *and* the load run sets
    `K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true`; 19665 is the safe default.
 
+### What each suite sends
+
+- **Load runs** stream every k6 series through remote-write: read/write p95 by operation,
+  error rate, scenario pass and duration, GraphQL errors. Nothing has streamed since the
+  hand-driven run of 2026-08-27, because no load target is provisioned.
+- **Regression runs** stream the same way since 2026-09-16 (`regression.yml`, remote-write
+  on the k6 step): a dozen series per night — per-scenario pass/fail and duration, and the
+  six operations' read/write p95 at one user, the floor a load run is read against. Before
+  that the **Regression scenario pass rate** panel was blank by construction. Plus the start
+  and end **annotations**, which every run has always posted.
+- **Not in Grafana: the Playwright rows.** Per-scenario pass/fail and duration for the 17
+  browser tests live only in the `run-data` branch ledger (JSON per run). Two ways to chart
+  them if wanted, neither built: the Infinity data source reading the ledger's raw GitHub
+  URLs (no pipeline, retention is git's), or a small publisher pushing the summary as
+  gauges through the stack's OTLP gateway (needs one more secret and a series budget line).
+
+
 ### Metric names to check on the first armed run
 
 The remote-write output prefixes everything with `k6_` and derives trend series from
