@@ -71,8 +71,9 @@
   _Avoid_: threshold (reserved for the trend run's ledger-derived limits).
 - **Surge verdict** — the surge run's pass/fail, one line per surge SLO, published with
   the run.
-- **gpp-tests** — the production testing repository (`gemini-hlsw/gpp-tests`, public)
-  that graduates this prototype; all three suites live there, separated internally with
-  the load suite as the front door. This repo is its prototype (`cquiroz/gpp-tests`), kept
-  as the frozen archive of the wayfinding and research once the surge branch has moved
-  across.
+- **gpp-tests** — this project: the three suites, their shared operations library, the
+  wayfinding and the research, in one repository with the load suite as the front door.
+  Today it lives at `cquiroz/gpp-tests` (the prototype).
+- **Org repo** — `gemini-hlsw/gpp-tests`, the public production home the prototype
+  graduates into with fresh history; not yet created. Once it is green, the prototype is
+  kept as the frozen archive of the wayfinding and research.

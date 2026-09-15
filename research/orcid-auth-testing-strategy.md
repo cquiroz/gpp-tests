@@ -1,8 +1,10 @@
 # Testing beyond guests: how to handle ORCID authentication
 
-**Written:** 2026-08-25. **Status:** decision note. Resolves the "needs standard users"
-blocker on the P2 rows of [`tests/COVERAGE.md`](../tests/COVERAGE.md) (proposals, program
-sharing) and records where the automation scope line sits. Grounding:
+**Written:** 2026-08-25. **Status:** decision note, since implemented — tiers 2–3 shipped as
+`stack/scripts/create-standard-users.sh` and `tests/support/standard-users.ts`; the rows it
+unblocked in [`tests/COVERAGE.md`](../tests/COVERAGE.md) (proposals, program sharing) are P1
+and partly covered. The text below is as written. It resolves the "needs standard users"
+blocker and records where the automation scope line sits. Grounding:
 [`lucuma-deployment-shapes.md`](lucuma-deployment-shapes.md) §auth,
 [`guest-visibility-refresh.md`](guest-visibility-refresh.md), ticket
 [006](../wayfinder/tickets/006-decide-test-user-pool.md).

@@ -1,4 +1,4 @@
-# Running the nightly load suite on AWS (M4, implemented on EC2)
+# Running the nightly load suite on AWS (M4 on EC2 — proposed)
 
 **Written:** 2026-08-27. **Status:** design note, nothing built. Phase 3 of
 [AWS load-target options](aws-load-target-options.md), which covers *whether* to run on AWS

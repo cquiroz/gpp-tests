@@ -1,6 +1,17 @@
-# The load target
+# The load target (Heroku shape — not provisioned)
 
-The persistent Heroku environment the nightly performance suite points at (spec §6,
+> **Status, 2026-09-15.** None of this exists yet: the `lucuma-*-loadtest` apps were never
+> created, `performance.yml` exits with a notice every morning, and the cost figures below are
+> estimates for when it does. The surge work iterates on a self-hosted **AWS** target instead
+> ([ticket 016](../wayfinder/tickets/016-automate-aws-load-target.md),
+> [aws-nightly-automation.md](../research/aws-nightly-automation.md)); this Heroku shape is
+> deferred to the production-shaped capacity run
+> ([ticket 026](../wayfinder/tickets/026-provision-production-shaped-heroku-target.md)), once
+> production sizing has been read ([027](../wayfinder/tickets/027-read-production-sizing.md)).
+> The scripts here are written, dry-run tested and guard-railed; the text below describes
+> what they *would* create.
+
+The persistent Heroku environment the nightly performance suite would point at (spec §6,
 milestone M4). Unlike the regression stack, this one is not throwaway — it is provisioned
 once, and every night it is released from the day's `-dev` images, reset, driven for forty
 minutes, and scaled back to nothing.
@@ -26,7 +37,7 @@ SSO's holds only users and sessions, so it gets the cheapest plan.
 **Redis on the ITC.** Off Heroku the ITC treats Redis as an optional cache, which is why the
 compose stack omits it. On a dyno it is mandatory.
 
-## Cost
+## Cost (estimate — nothing is provisioned, spend today is $0)
 
 Heroku prorates everything to the second and bills dynos on wall-clock time above zero, so
 scaling to zero between runs is what makes this affordable. Prices verified against
@@ -84,7 +95,7 @@ until it passes three independent checks:
    whatever check 1 says. `-dev` is in the list because those apps are the image *source*: we
    pull from them and must never push to them. This list is hardcoded and cannot be overridden
    by an environment variable.
-3. **The app must carry `ODBATTR_LOADTEST=1`**, a config var `provision.sh` sets on apps it
+3. **The app must carry `GPP_TESTS_LOADTEST=1`**, a config var `provision.sh` sets on apps it
    creates itself. Production, staging and the `-dev` apps do not have it and never will — so
    unlike the first two checks, this one cannot be satisfied by a typo at all.
 
@@ -185,7 +196,7 @@ Then set the repository variables it prints, and the nightly workflow stops skip
 | `LOADTEST_ODB_APP` / `_SSO_APP` / `_ITC_APP` | `lucuma-*-loadtest` | app names are globally unique on Heroku |
 | `DYNO_SIZE` | `performance-m` | 2.5 GB, so JVM memory is not the thing being measured |
 | `ODB_PG_PLAN` / `SSO_PG_PLAN` | `essential-2` / `essential-0` | |
-| `ODB_MAX_CONNECTIONS` | `25` | must stay under the plan's limit — see below |
+| `ODB_MAX_CONNECTIONS` | `15` | must stay under the plan's limit — see below |
 | `ITC_REDIS_PLAN` | `heroku-redis:mini` | |
 
 ### The connection pool matters

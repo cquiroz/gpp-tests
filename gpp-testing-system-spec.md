@@ -1,8 +1,18 @@
 # GPP Testing System Spec
 
-**Status:** ready to implement · **Date:** 2026-08-17 · **Owner:** carlos.quiroz@noirlab.edu
+**Status:** historical design baseline (written 2026-08-17, implemented as M1–M3) ·
+**Owner:** carlos.quiroz@noirlab.edu
 **Derived from:** the wayfinder map in `wayfinder/map.md` — each section links the ticket
 holding its full rationale. Research evidence lives in `research/`.
+
+> **Read this first (2026-09-15).** This document is kept as written. Decisions since live
+> in [`wayfinder/map-gpp-tests.md`](wayfinder/map-gpp-tests.md) and supersede it where they
+> differ: §4's "phase 2" standard users are implemented (PI and staff fabricated per run);
+> §5's single four-step journey is now 17 browser tests and 6 k6 scenarios held to one
+> catalog; §6's load run has two profiles (nightly trend, on-demand **surge** covering
+> Observe execution and websockets) and iterates on an AWS target, with the Heroku shape
+> deferred to a production-shaped capacity run; §11's M4 and M5 are not reached. How the
+> prototype was proven is in [`research/prototype-status-2026-08.md`](research/prototype-status-2026-08.md).
 
 ## 1. Purpose
 

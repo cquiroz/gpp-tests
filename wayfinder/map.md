@@ -112,6 +112,9 @@ Settled during charting (constraints for every ticket):
 
 ## Not yet specified
 
+*Superseded — this map is closed; the live list is in
+[map-gpp-tests.md](map-gpp-tests.md). Kept as the state of the fog on 2026-08-17.*
+
 - **Per-PR test dispatch** — phase 2: `lucuma-odb` / `lucuma-apps` CI triggering the
   regression subset on pull requests and reporting status back. Deliberately deferred
   until v1 scheduled runs prove out. Refined by ticket 010: the *per-merge* advisory

@@ -25,8 +25,8 @@
 
 # Set on every app by loadtest/provision.sh. Production, staging and the -dev apps do not have
 # it and never will, which is what makes it a reliable discriminator rather than a convention.
-ODBATTR_MARKER_VAR="ODBATTR_LOADTEST"
-ODBATTR_MARKER_VALUE="1"
+GPP_TESTS_MARKER_VAR="GPP_TESTS_LOADTEST"
+GPP_TESTS_MARKER_VALUE="1"
 
 # Deliberately strict: the suffix is the whole point. Override only if your app names genuinely
 # differ, and keep something distinctive in the pattern.
@@ -78,18 +78,18 @@ assert_loadtest_marker() {
   assert_loadtest_name "$app"
 
   local value
-  if ! value="$(heroku config:get "$ODBATTR_MARKER_VAR" -a "$app" 2>/dev/null)"; then
-    guard_die "could not read $ODBATTR_MARKER_VAR from \"$app\".
+  if ! value="$(heroku config:get "$GPP_TESTS_MARKER_VAR" -a "$app" 2>/dev/null)"; then
+    guard_die "could not read $GPP_TESTS_MARKER_VAR from \"$app\".
     Treating that as \"not ours\" and stopping. If the app exists and is a load-test app,
     run loadtest/provision.sh --apply to mark it."
   fi
 
-  if [[ "$(printf '%s' "$value" | tr -d '[:space:]')" != "$ODBATTR_MARKER_VALUE" ]]; then
+  if [[ "$(printf '%s' "$value" | tr -d '[:space:]')" != "$GPP_TESTS_MARKER_VALUE" ]]; then
     guard_die "\"$app\" is not marked as a load-test app.
-    $ODBATTR_MARKER_VAR is not set to $ODBATTR_MARKER_VALUE, so this tooling did not create
+    $GPP_TESTS_MARKER_VAR is not set to $GPP_TESTS_MARKER_VALUE, so this tooling did not create
     it — and it will not reset, release to, or rescale an app it does not own.
     If this is genuinely your load-test app:
-        heroku config:set $ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE -a $app"
+        heroku config:set $GPP_TESTS_MARKER_VAR=$GPP_TESTS_MARKER_VALUE -a $app"
   fi
 }
 

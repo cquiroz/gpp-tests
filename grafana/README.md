@@ -3,6 +3,12 @@
 Everything lands in the org's existing Grafana Cloud stack (spec §7). Nothing here needs the
 paid Grafana Cloud k6 product.
 
+> **Status, 2026-09-15.** The wiring is verified — a hand-driven load run on 2026-08-27
+> streamed to this stack and five of the six GPP panels drew — but no *scheduled* load run has
+> ever reached it, because the load target is not provisioned. Ticket
+> [024](../wayfinder/tickets/024-telemetry-stack-and-collector.md) decides whether surge
+> telemetry moves to a separate paid stack, since this one's series budget is production's.
+
 ## Dashboards
 
 1. **GPP test results** — `gpp-test-results.json` in this directory. Dashboards → New →
@@ -115,5 +121,7 @@ budget exists to prevent.
 
 ## Alerts
 
-None in v1, deliberately (spec §7). A threshold breach fails the CI run, and GitHub's
-workflow-failure email is the single alerting path. Trend-based Grafana alerts are future work.
+None built yet. A threshold breach fails the CI run, and GitHub's workflow-failure email is
+the alerting path today. [Ticket 010](../wayfinder/tickets/010-decide-dev-process-integration.md)
+decided the next step — Slack, on red **and** recovery, in a channel the team reads — and it
+is queued behind the stress work. Trend-based Grafana alerts are further out.

@@ -94,7 +94,8 @@ becomes a new guest after eight minutes — the exact failure already found and 
 `docker-compose.yml` is the best-tested artifact in this repository for *booting* the stack,
 and that is why Option A reuses it. But its `mem_limit`s exist so the ephemeral regression
 run fits on a 2-core GitHub runner: **odb 2g, postgres 1g, itc 1g, obscalc 1g, sso 768m —
-about 5.75 GiB in total.** Left alone on a load target they are the bottleneck, and the
+about 5.75 GiB in total** (postgres has since been raised to 2g after an OOM kill on
+2026-09-07; the argument stands). Left alone on a load target they are the bottleneck, and the
 measurement is of the limit rather than of the machine.
 
 This is not a hypothetical. The first run against an `m7i.4xlarge` (2026-08-27, 64 GiB)

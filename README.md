@@ -1,15 +1,19 @@
 # gpp-tests — automated cross-system testing for GPP
 
-Two suites against the GPP (lucuma) ecosystem, per
-[`gpp-testing-system-spec.md`](gpp-testing-system-spec.md):
+Three suites against the GPP (lucuma) ecosystem — the odb GraphQL backend, the Explore
+frontend, SSO, ITC and obscalc — designed in
+[`gpp-testing-system-spec.md`](gpp-testing-system-spec.md) and steered by the map in
+[`wayfinder/`](wayfinder/map-gpp-tests.md):
 
-- **Regression** (daily): boot the whole stack from an empty database in CI and prove the core
-  user journey still works on latest `main`.
-- **Load** (nightly): a k6 run against a dedicated Heroku environment whose claim is *"tonight
-  is slower than last night"*.
+- **Browser and GraphQL regression** (daily): boot the whole stack from an empty database in
+  CI and prove the user journeys still work on latest `main`. Every scenario runs at both
+  layers unless the parity catalog says why not.
+- **Load** (nightly **trend run**, claim *"tonight is slower than last night"*; on-demand
+  **surge run**, claim *"the odb keeps executing observations and accepting proposals under
+  end-of-CfP load"* — the surge is specified, not yet built).
 
-Open-source tooling only, cheap to run (GitHub Actions + Heroku), results in the org's existing
-Grafana Cloud stack.
+Open-source tooling only (Playwright, k6, Docker Compose, GitHub Actions), results in a
+Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 
 ## Layout
 
@@ -94,187 +98,45 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
 | §7 durable record | `lib/summary.js`, `tools/write-run-summary.js`, `.github/scripts/publish-run-data.sh` |
 | §8 CI | `.github/workflows/`, `.github/actions/boot-stack/` |
 
-## Milestones (spec §11)
+## Status
 
-- **M1** stack boots green — **done**, verified on macOS: all seven readiness checks pass,
-  the CA is exported and image digests are recorded.
-- **M2** journey green against it — **done**: all four scenarios pass in ~41 s, including the
-  ITC/obscalc calculated-results assertion. `verify:operations` reports 12/12 and the k6
-  regression suite is green.
-- **M3** `regression.yml` green in CI — **done**, run
-  [32863434794](https://github.com/cquiroz/gpp-tests/actions/runs/32863434794) on an
-  `ubuntu-latest` runner: stack booted from empty, all four scenarios passed, k6 clean, and
-  the summary was published to the `run-data` branch. Total 213 s. Email notification on
-  failure is GitHub's default for scheduled runs and needs nothing configured.
-- **M4** load target — tooling ready, **not yet provisioned**. `loadtest/provision.sh` creates
-  the `lucuma-*-loadtest` app set: dry run by default, idempotent, and it refuses to scale
-  dynos down while a run is in flight. It creates billable resources and needs create-app
-  rights in the team, so a person runs it rather than CI. See
-  [loadtest/README.md](loadtest/README.md) for the sequence, the cost and the caveats. Until
-  the five `LOADTEST_*` repository variables are set, `performance.yml` exits green with a
-  notice instead of emailing a failure every morning. Dynos sit at zero between runs and are
-  scaled up per run, so a nightly costs roughly 20 dyno-hours a month rather than 720.
-- **M5** baseline captured, thresholds armed — automatic: the first three nights write
-  baseline-only summaries to the `run-data` branch, and `tools/compute-thresholds.js` arms
-  thresholds from the fourth night on.
+- **Regression path: complete and green.** Stack boots in CI from empty, 17 e2e tests and the
+  k6 regression pass nightly on
+  [cquiroz/gpp-tests](https://github.com/cquiroz/gpp-tests/actions). The one red night so far
+  (2026-09-07) was the odb changing a rule under the suite, caught within a day.
+- **Load target: not provisioned.** The 200-VU profile has run once, by hand, on AWS
+  (clean at 200 VUs). `performance.yml` exits green with a notice until the `LOADTEST_*`
+  repository variables exist; no baseline nights have been captured.
+- **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
+  [map](wayfinder/map-gpp-tests.md); the decision behind the order is
+  [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).
 
-## What is verified
+## Where decisions live
 
-The whole regression path has now been run end to end against a real stack (macOS, Docker
-Desktop, images pulled from Heroku's registry):
-
-- `stack/scripts/bootstrap.sh` from empty → seven readiness checks green.
-- `npm run verify:operations` → **12/12** operations against the live ODB.
-- `npx playwright test` → **4/4 scenarios**, ~41 s, including the calculated-results
-  assertion that proves ITC and obscalc are alive.
-- `k6 run k6/regression.js` → all checks pass, zero GraphQL errors.
-
-Six bugs that only a real boot could expose, all fixed:
-
-1. **Hasura refused to start.** `HASURA_GRAPHQL_UNAUTHORIZED_ROLE` requires an admin secret;
-   with none set, Hasura is already fully open, which is what Explore needs. Setting it was
-   fatal — and Explore hangs forever after login without prefs.
-2. **obscalc raced the ODB's migrations** and exited 1 (`Relation "t_time_estimate" does not
-   exist`). The ODB binds its port only after Flyway finishes, so `depends_on:
-   service_healthy` against a `/dev/tcp` healthcheck is an exact gate. Nothing probed obscalc
-   during readiness either, so its death was silent; there is now a check for it.
-3. **A stale service JWT.** Bootstrap reused an `ODB_SERVICE_JWT` inherited from the shell,
-   signed by a previous stack's keypair. It surfaced only inside obscalc as
-   `java.security.SignatureException: Bad signature length: got 512 but was expecting 256`.
-   The token is now always minted fresh and validated (`lib/service-jwt.js`).
-4. **The GMOS fixture was physically unobservable.** An r' filter (~550–700 nm) at the
-   fixture's 500 nm central wavelength blocks the light; the ITC rejected every observation
-   with "Insufficient signal at 500.0 nm". Verified against the live ITC that this was the
-   only cause — the fixture now sets no order-blocking filter.
-5. **Asynchronous results read as failures.** obscalc computes the digest in the background,
-   and until it lands the ODB answers with a `sequence_unavailable` *error*, not a null. Both
-   the k6 suites and `verify-operations` treated that as a failure; it would also have pushed
-   the nightly load run below its check-rate floor.
-
-6. **The `[pi]` journey waited for a dialog Explore had no reason to show.** With no program
-   id in the URL, Explore branches on what the user can *see*: a user who can see no programs
-   gets one auto-created and is routed to it, and only a user who can see some gets the
-   Proposals & Programs popup (`ExploreLayout.scala`). A freshly fabricated PI owns nothing, so
-   it took the first branch and the popup never appeared. The retry then passed — because the
-   failed attempt had left the PI owning the program Explore made for them — so the run stayed
-   green and reported flaky, and `staff` hid the bug entirely by seeing every program in the
-   ODB. Two CI runs failed identically before this was understood. Scenario 2 now opens the
-   dialog itself from whichever landing it finds (the toolbar's "Manage Programs" item is gated
-   on a program being selected, not on the kind of user), and takes its "which program did I
-   create" baseline with the dialog open rather than at login, where it raced that same
-   auto-creation.
-
-Four of the five Explore selectors also turned out to be wrong, now corrected against the
-running app: the toolbar menu has no accessible name (it is the last toolbar button), the
-target button is "Add a target" (not "Add Target"), creating a program leaves a modal whose
-mask blocks everything until the new program's **Select** is clicked, and the subtitle is
-edited through a pencil button rather than by clicking the text.
-
-Verified offline, before any of that:
-
-- All 92 unit tests, including every GraphQL document and variable payload validated against
-  the real `OdbSchema.graphql`.
-- Both k6 suites executed end to end against a mock ODB/SSO (k6 v2.2.0): imports, the vendored
-  Tempo instrumentation, the label budget, ramping VUs, per-VU seeding, the 60/40 mix, guest
-  login, **and JWT refresh** — which is how we found that k6 resets the default cookie jar
-  between iterations. Without the fix in `k6/lib/auth.js`, every VU would have silently become
-  a *new* guest after 8 minutes and the read half of the mix would have gone hollow while still
-  reporting green.
-- `lib/summary.js` parses a real `k6 --summary-export` document: the shape is flat, and a
-  threshold entry of `true` means **failed**.
-- A deliberate negative run: with every mutation rejected at the GraphQL layer (HTTP 200 with
-  an `errors` array), `http_req_failed` stays at 0% but the load suite's check-rate floor
-  fails the run and the ledger records `outcome: "fail"`. That is the difference between a
-  hollow night and a clean baseline.
-- Certificate and GPG keypair generation, the `/etc/hosts` step, the lucuma-apps sparse
-  checkout (48 prefs migrations), `record-images.sh` against a stubbed docker, compose config
-  validation, and all workflow YAML.
-- `environments.conf.json` generation against the live Firebase dev host — which is why the
-  generator *merges* into the bundle's own conf: the real file carries `sso.readTimeoutSeconds`
-  and `sso.expirationAnticipationSeconds`, fields no amount of source reading would have
-  predicted.
-
-## Still untested against the real thing
-
-1. **The load target (M4)**, which does not exist yet — so `performance.yml`, the threshold
-   arming path, `provision.sh` and `release-loadtest.sh` have only been exercised as dry runs
-   or against a stubbed `heroku` CLI. The 200-VU profile has never run against Heroku dynos.
-   It *has* now run against an EC2 target, by hand: three runs on 2026-08-27, one of them
-   clean at 200 VUs with zero failures — see
-   [aws-load-target-options.md](research/aws-load-target-options.md) for what they measured and
-   [aws-nightly-automation.md](research/aws-nightly-automation.md) for automating that instead.
-2. **The dashboard's regression panel** — the rest is now **verified**. A live load run on
-   2026-08-27 streamed to Grafana Cloud and five of the six **GPP test results** panels drew:
-   read/write p95 by operation, error rate, scenario duration and GraphQL errors. The `_p95`
-   suffixes are correct for k6 v2 *provided* `K6_PROMETHEUS_RW_TREND_STATS` is set — without it
-   k6 emits p99 only and every p95 panel would render blank, which is why `performance.yml`
-   sets it explicitly. The exception is **Regression scenario pass rate**, which queries
-   `suite="regression"` series that nothing ever pushes: `regression.yml` runs k6 without
-   `-o experimental-prometheus-rw`, so that panel is blank by construction. Either enable
-   remote write there or drop the panel and let the `run-data` ledger be the regression record.
-3. **A failing run.** Every CI run so far has been green, so the red paths — artifact upload,
-   the failure email, a threshold breach annotation — are untested end to end.
-4. **Explore's selectors will drift.** They are correct against lucuma-apps `main` as of the
-   runs above, but four of five were wrong on the first attempt — this is the part of the
-   suite most likely to break, and why spec §10 asks lucuma-apps for `data-testid`. They are
-   all in `tests/support/selectors.ts`.
-
-## Deliberate deviations from the spec
-
-Each of these is a judgement call, not an oversight:
-
-1. **The SSO GPG keypair and the Postgres certificate are generated per run, not committed.**
-   Functionally identical (both services read the same generated pair within a run), and
-   nothing that looks like a private key ever lands in git.
-2. **Explore is reverse-proxied from Firebase dev hosting**, with only `environments.conf.json`
-   served locally, rather than downloading the bundle. Same "tracks main, no build in CI"
-   property, far less to go wrong. `Caddyfile.bundle` covers the static-bundle case.
-3. **Service-to-service traffic stays on plain HTTP inside the compose network**; only what the
-   browser and k6 touch goes through Caddy's TLS. Otherwise every JVM container would need the
-   internal CA installed to call SSO.
-4. **`testid` is not a metric label.** Spec §7 says both "testid on k6 metrics" and "never
-   testid" in adjacent bullets; ticket 007's reasoning (annotations carry run identity) wins,
-   and `K6_TAG_TESTID=true` is the escape hatch.
-5. **Playwright accepts the internal CA via `ignoreHTTPSErrors`** by default, because Chromium
-   on Linux reads its own NSS store. `stack/scripts/trust-ca.sh` with `INSTALL_NSS=1` plus
-   `PW_IGNORE_HTTPS_ERRORS=false` gives a strict-TLS run.
-6. **Scenario 3 sets the target's coordinates and the GMOS long-slit mode through the API**,
-   after creating both through the UI. Explore's coordinate editor and configuration tile have
-   no stable selectors today, and the assertion that matters — calculated results appear, so
-   ITC and obscalc are alive — is unaffected. The observation and the target are still created
-   by clicking. This is the one place where browser coverage is narrower than §5 reads.
-   Scenario 4 seeds its starting subtitle the same way, so the step under test is an edit of
-   an existing value; the badge picking that change up also exercises Explore's
-   `observationEdit` subscription.
-7. **The journey is four tests in a serial block**, not one test with four steps, so the ledger
-   gets per-scenario pass/fail and duration (which §7 needs). A retry still re-runs the whole
-   chained journey from a fresh guest.
-8. **Playwright artifacts are uploaded on a retried pass as well as on a failure**, where §8
-   says failure only. A flaky run is the case where the trace is the *only* evidence — the run
-   stays green, so `failure()` never fires and the artifacts are discarded. Bug 6 above cost
-   two CI runs and a source read for want of one screenshot.
+| Question | Read |
+|---|---|
+| What does a word mean here? | [`CONTEXT.md`](CONTEXT.md) |
+| What is the system meant to be? | [`gpp-testing-system-spec.md`](gpp-testing-system-spec.md) |
+| Why is it built this way, and what is next? | [`wayfinder/map-gpp-tests.md`](wayfinder/map-gpp-tests.md) and its tickets; the first map is [`wayfinder/map.md`](wayfinder/map.md) |
+| What did the research find? | [`research/`](research/) — one file per question, dated |
+| How was the prototype proven, and what broke on the way? | [`research/prototype-status-2026-08.md`](research/prototype-status-2026-08.md) |
+| What does each scenario cover, and what is missing? | [`tests/COVERAGE.md`](tests/COVERAGE.md) |
 
 ## Production safety
 
-The load-test tooling resets databases, deploys images and rescales dynos on an account that
-also owns the production GPP environment. Every such operation is gated by
-[`loadtest/guard.sh`](loadtest/guard.sh): the app name must end in `-loadtest`, must not
-contain `production`/`staging`/`-dev`, and the app must carry an `ODBATTR_LOADTEST=1` config
-var that only `provision.sh` sets. All three fail closed, and the third cannot be satisfied by
-a typo. See [loadtest/README.md](loadtest/README.md#safety-how-this-is-kept-away-from-production)
-for the reasoning, the verification, and the one gap code cannot close (token scope).
+The load tooling resets databases, deploys images and rescales dynos on the account that also
+owns production. Two independent rails, both failing closed:
 
-Separately, **the host k6 sends load at is checked too** ([`lib/load-target.js`](lib/load-target.js)):
-a target must carry a `loadtest` label or be the local ephemeral stack, or the run refuses. The
-guard above protects the apps this tooling *manages*; this one protects whatever it *hammers*,
-which is a different thing — the load profile writes as well as reads, so a mistyped
-`LOADTEST_ODB_GRAPHQL_URL` would have seeded data into the environment it named. It is enforced
-by k6 itself at init and by `performance.yml` before the release step, and because it matches on
-hostnames rather than app names it is the one rail that moves to AWS unchanged.
+- [`loadtest/guard.sh`](loadtest/guard.sh) gates every Heroku operation: the app name must end
+  in `-loadtest`, must not contain `production`/`staging`/`-dev`, and must carry a marker
+  config var only `provision.sh` sets. Reasoning and the one gap code cannot close (token
+  scope) are in [loadtest/README.md](loadtest/README.md#safety-how-this-is-kept-away-from-production).
+- [`lib/load-target.js`](lib/load-target.js) gates the host k6 sends load at: it must carry a
+  `loadtest` label or be the local stack, enforced by k6 at init and by `performance.yml`
+  before the release step. It matches hostnames, so it moves to AWS unchanged.
 
-**The regression path never calls the Heroku CLI at all** — it does `docker login
-registry.heroku.com` and `compose pull`, both read-only against the `-dev` registry. Nothing in
-a regression run can modify any Heroku app.
+The regression path never calls the Heroku CLI: it pulls images from the `-dev` registry and
+nothing else.
 
 ## Secrets
 
@@ -294,7 +156,9 @@ gh secret set HEROKU_API_KEY                     # or add it in Settings → Sec
 | `GRAFANA_URL`, `GRAFANA_ANNOTATIONS_TOKEN` | run annotations |
 | `ODB_OTEL_ENDPOINT`, `ODB_OTEL_KEY` | optional: ODB traces from the ephemeral stack |
 
-**No test-user credentials exist** — every test identity is an SSO guest (spec §4).
+**No real user credentials exist.** Test identities are SSO guests (spec §4) or standard
+users fabricated per run by `stack/scripts/create-standard-users.sh` (PI and staff, no ORCID);
+both live only as long as the stack does.
 
 ## Troubleshooting
 
@@ -315,5 +179,7 @@ gh secret set HEROKU_API_KEY                     # or add it in Settings → Sec
 - **Playwright says "Executable doesn't exist" under Nix.** An inherited
   `PLAYWRIGHT_BROWSERS_PATH` points into the read-only store with a mismatched browser
   revision. The devShell redirects it to `.playwright/`; run `npx playwright install chromium`.
+  Set `GPP_TESTS_KEEP_BROWSERS_PATH=1` to keep your own path instead, and `GPP_TESTS_QUIET=1`
+  to silence the shell banner.
 - **A metric label was rejected.** That is `lib/tags.js` doing its job; add the dimension to
   the annotation instead, or take the series budget hit knowingly.

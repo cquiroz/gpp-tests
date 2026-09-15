@@ -59,11 +59,11 @@
             # surfaces as "Executable doesn't exist at /nix/store/...". Point it at a
             # writable, gitignored directory inside the repo instead, so the browser is
             # always the one this project pins. Override it yourself to opt out.
-            if [ -z "''${ODBATTR_KEEP_BROWSERS_PATH:-}" ]; then
+            if [ -z "''${GPP_TESTS_KEEP_BROWSERS_PATH:-}" ]; then
               export PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright"
             fi
 
-            if [ -z "''${ODBATTR_QUIET:-}" ]; then
+            if [ -z "''${GPP_TESTS_QUIET:-}" ]; then
               echo "gpp-tests · node $(node --version) · $(k6 version | head -1)"
 
               if ! command -v docker >/dev/null 2>&1; then

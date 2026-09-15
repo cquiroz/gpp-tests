@@ -7,8 +7,8 @@ using the UI only for the behavior under test.
 
 **Status** — `covered`: the daily journey or an area spec exercises it; `partial`: touched
 incidentally, no dedicated assertions; `none`: untested.
-**Priority** — `P0`: belongs in the daily regression run; `P1`: full-suite (weekly / on
-demand); `P2`: blocked or deferred (blocker noted). Priorities below are proposals —
+**Priority** — `P0`: belongs in the daily regression run; `P1`: full-suite (planned weekly / on
+demand — the weekly workflow is decided in ticket 010, not yet built); `P2`: blocked or deferred (blocker noted). Priorities below are proposals —
 reorder from real usage knowledge.
 
 | Area | What it includes | Status | Where | Priority |
@@ -63,7 +63,8 @@ rules and Explore's diverge — worth writing down, because the divergence is th
 2. UI action → GraphQL read-back assertion, same as the journey (spec §5).
 3. All selectors live in `tests/support/` — one module per area once an area has more
    than a handful.
-4. P0 areas run daily; the full suite runs weekly and via `workflow_dispatch`.
+4. P0 areas run daily; the full suite is meant to run weekly and via `workflow_dispatch` —
+   today only the daily `regression.yml` exists (ticket 010 leftover).
 5. An area is `covered` only when its row names the spec file and the spec asserts the
    area's core behavior, not merely renders it.
 6. Every spec title needs an entry in [`lib/scenario-catalog.js`](../lib/scenario-catalog.js),

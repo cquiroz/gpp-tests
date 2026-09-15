@@ -123,23 +123,23 @@ for app in "$ODB_APP" "$SSO_APP" "$ITC_APP"; do
     # would mean overwriting its config vars and rescaling its dynos — so refuse, rather than
     # assume a name ending in -loadtest is ours. This is the check that catches a typo landing
     # on a real app whose name happens to satisfy the pattern.
-    marker="$(config_value "$app" "$ODBATTR_MARKER_VAR")"
-    if [[ "$(printf '%s' "$marker" | tr -d '[:space:]')" == "$ODBATTR_MARKER_VALUE" ]]; then
+    marker="$(config_value "$app" "$GPP_TESTS_MARKER_VAR")"
+    if [[ "$(printf '%s' "$marker" | tr -d '[:space:]')" == "$GPP_TESTS_MARKER_VALUE" ]]; then
       skip "$app exists and is marked as ours"
     elif [[ -z "$APPLY" ]]; then
       warn "$app already exists and is not marked as a load-test app."
       warn "With --apply this stops, rather than adopting an app it did not create."
     else
-      guard_die "\"$app\" already exists but does not carry $ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE.
+      guard_die "\"$app\" already exists but does not carry $GPP_TESTS_MARKER_VAR=$GPP_TESTS_MARKER_VALUE.
     This tooling did not create it, so it will not write config or rescale dynos on it.
     Either pick a different name, or — only if you are certain this app is yours to use:
-        heroku config:set $ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE -a $app"
+        heroku config:set $GPP_TESTS_MARKER_VAR=$GPP_TESTS_MARKER_VALUE -a $app"
     fi
   else
     run heroku apps:create "$app" --team "$TEAM" --stack container
     # Marked immediately, before any other configuration, so an interrupted provisioning run
     # leaves an app the later steps still recognise as theirs.
-    set_config "$app" "$ODBATTR_MARKER_VAR=$ODBATTR_MARKER_VALUE"
+    set_config "$app" "$GPP_TESTS_MARKER_VAR=$GPP_TESTS_MARKER_VALUE"
   fi
 done
 

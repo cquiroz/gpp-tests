@@ -21,7 +21,7 @@ if [[ "$1" == "config:get" ]]; then
   for ((i=1; i<=$#; i++)); do
     [[ "${!i}" == "-a" ]] && { j=$((i+1)); app="${!j}"; }
   done
-  if [[ "$2" == "ODBATTR_LOADTEST" && " ${MARKED:-} " == *" $app "* ]]; then
+  if [[ "$2" == "GPP_TESTS_LOADTEST" && " ${MARKED:-} " == *" $app "* ]]; then
     echo 1
   else
     echo ""
