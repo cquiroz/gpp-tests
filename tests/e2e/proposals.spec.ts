@@ -227,10 +227,11 @@ test("scenario 3: Explore shows the proposal, and refuses to submit it incomplet
     // upload to. That is the "Attachments" row of tests/COVERAGE.md. Since 2026-09-07 the
     // ODB enforces the same two attachments itself — scenario 4 asserts that refusal.
     await expect(ui.submitProposalButton(page)).toBeDisabled();
-    await expect(page.getByText(/science attachment is required/i)).toBeVisible();
-    await expect(page.getByText(/team attachment is required/i)).toBeVisible();
-    await expect(page.getByText(/abstract is required/i)).toBeHidden();
-    await expect(page.getByText(/category is required/i)).toBeHidden();
+    const errors = ui.proposalErrors(page);
+    await expect(errors.getByText(/science attachment is required/i)).toBeVisible();
+    await expect(errors.getByText(/team attachment is required/i)).toBeVisible();
+    await expect(errors.getByText(/abstract is required/i)).toBeHidden();
+    await expect(errors.getByText(/category is required/i)).toBeHidden();
   });
 });
 
