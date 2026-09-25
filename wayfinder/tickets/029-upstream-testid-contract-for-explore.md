@@ -202,3 +202,33 @@ aimed at the agents doing much of the editing. It supersedes the note above that
 promise lost its home when `TestId.scala` turned out not to exist. Still no check, so the
 bundle grep is still worth building — but the convention is now written where an editor
 will actually meet it.
+
+### Merged — and the dev deploy is red for unrelated reasons
+
+`explore-gemini-dev.web.app` now serves `46c237cbae`, all 18 ids verified present in the
+deployed bundle, so `migrate-selectors-to-testids` is merged to `main`.
+
+**The suite is not green against that deploy, and it is not the testids.** Run against
+Firebase dev hosting (the nightly's own path, default `Caddyfile`), the migrated suite and
+the pre-migration selectors on `main` fail *identically* — scenario 3 `[pi]`/`[staff]` at
+30.1s, guest scenario 1 at 2.1m, both on first run and retry. The same suite is green
+against the branch build `b6724eb18a` served from disk. What changed is everything else
+that reached `main` between the branch point and the merge, not our locators.
+
+Two distinct failures, worth separating for whoever picks this up:
+
+1. **A sidebar overlay eats clicks on the obs tree.** The locator resolves — the error log
+   shows `data-testid="explore-obs-tree-add-obs"` on the real `<button>` — and then 60+
+   click retries are refused by
+   `<div class="p-sidebar-mask p-sidebar-bottom p-component-overlay p-sidebar-visible">`.
+   A PrimeReact bottom sidebar is open over the app. Pre-migration selectors hit the same
+   mask, so this is Explore behaviour, not selector drift.
+2. **The guest flow never renders past the shell.** `explore-obs-tree-add-obs` is
+   *not found* at all after 120s, and the page snapshot contains only
+   `toolbar: text: Explore`. `proposals.spec.ts` scenario 3 fails the same way on
+   `explore-proposal-submit`. Signed-in `[pi]`/`[staff]` sessions get further, so whatever
+   this is, it bites the guest path hardest.
+
+This is the first real exercise of the per-merge lane's premise (ticket 010) and it worked
+as designed: a merge to lucuma-apps `main` broke the journey, and the suite caught it the
+same day. Needs its own ticket — it is Explore work, not gpp-tests work.
