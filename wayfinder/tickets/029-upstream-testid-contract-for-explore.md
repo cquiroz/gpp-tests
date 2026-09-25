@@ -179,3 +179,26 @@ against a `caddy_data` volume older than seven days serves TLS leaves signed by 
 intermediate: Caddy renews the intermediate on boot but keeps serving the stale leaf, which
 surfaces as `CERT_HAS_EXPIRED` from `npm run verify:operations`. `docker restart
 gpp-tests-caddy-1` fixes it in seconds. Worth a line in the README's switches section.
+
+### Landed upstream; waiting on the dev deploy
+
+Merged to lucuma-apps `main` as `46c237cbae` (PR #1580). **Do not merge
+`migrate-selectors-to-testids` until the dev deploy carries it** — the nightly runs against
+Firebase dev hosting, which still served `c814a6dcb7` (PR #1572) at merge time, and a
+bundle without the ids turns every migrated locator red. The gate is a hash, not a guess:
+
+    explore/deployed-git-hash.sh explore-gemini-dev.web.app
+
+Merge when that prints `46c237cbae` or later.
+
+**The rename guarantee found a home after all.** `ee04a1df43` adds a "Test ids for the
+end-to-end suite" section to `explore/CLAUDE.md`: it documents the `testId :=` convention,
+the `data-program-id` and menu-`id` exceptions and the `rg` incantation, then says *never
+remove or rename these ids*, that nothing in lucuma-apps checks them so a drop only shows
+as a red gpp-tests nightly, and that an element being rewritten must carry its id across.
+
+That last clause is the use-site-deletion case this ticket flagged as uncovered, and it is
+aimed at the agents doing much of the editing. It supersedes the note above that the
+promise lost its home when `TestId.scala` turned out not to exist. Still no check, so the
+bundle grep is still worth building — but the convention is now written where an editor
+will actually meet it.
