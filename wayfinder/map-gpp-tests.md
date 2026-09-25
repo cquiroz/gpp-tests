@@ -109,6 +109,9 @@ Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automati
 HITL), **028** (object store + attachment uploads — now blocks 017). Order of build:
 021 → 022 → 028 → 017 → 018/023, developed locally; 016 in parallel.
 
+Off that order and already claimed: **029** (the `data-testid` contract ask to
+lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
+
 ## Not yet specified
 
 - **Subscription round-trip SLO** — a provisional figure once 022 measures one.
