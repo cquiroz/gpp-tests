@@ -21,6 +21,17 @@ paid Grafana Cloud k6 product.
    this tenant ingests native histograms *and* the load run sets
    `K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true`; 19665 is the safe default.
 
+### Why every panel query is a `last_over_time(...[1d])`
+
+A regression run pushes **one sample per series** — the k6 script finishes in about two
+seconds and the remote-write flushes once — and then stales the series. A plain instant
+query only sees a sample when the panel's evaluation step lands inside the lookback window
+after it, and the stale marker closes that window at once, so at dashboard step widths the
+points are invisible: "No data" with data in the store. Wrapping each query in
+`last_over_time(...[1d])` (VUs: `max_over_time`) makes every step carry the night's last
+sample until the next night — a step line, one tread per run, which is what a nightly trend
+board should draw anyway. If a query is edited, keep the range function.
+
 ### What each suite sends
 
 - **Load runs** stream every k6 series through remote-write: read/write p95 by operation,

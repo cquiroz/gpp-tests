@@ -1,7 +1,7 @@
 {
   "uid": "gpp-test-results",
   "title": "GPP test results",
-  "description": "Nightly load latency, error trend and regression pass/fail history for the gpp-tests suites. Run identity comes from the gpp-tests annotations, not from metric labels (spec \u00a77).",
+  "description": "Nightly load latency, error trend and regression pass/fail history for the gpp-tests suites. Run identity comes from the gpp-tests annotations, not from metric labels (spec §7). Every query is a last_over_time(...[1d]) range: a regression run pushes one sample per series and stales it two seconds later, which a plain instant query at dashboard step widths never lands on; the range makes each night a step until the next.",
   "tags": [
     "gpp-tests",
     "gpp"
@@ -84,8 +84,8 @@
   "panels": [
     {
       "type": "timeseries",
-      "title": "Read p95 by operation (load)",
-      "description": "Night-over-night read latency. The nightly claim is relative: a step up here is the regression signal, not the absolute value. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "title": "Read p95 by operation",
+      "description": "Night-over-night read latency. The nightly claim is relative: a step up here is the regression signal, not the absolute value. The dashed grey line on the right axis is k6_vus — latency and errors are only interpretable against the load that produced them.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -104,7 +104,9 @@
             "drawStyle": "line",
             "lineWidth": 1,
             "fillOpacity": 5,
-            "showPoints": "auto"
+            "showPoints": "always",
+            "lineInterpolation": "stepAfter",
+            "pointSize": 5
           },
           "thresholds": {
             "mode": "absolute",
@@ -186,21 +188,21 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "k6_odb_read_duration_p95{suite=\"load\"}",
-          "legendFormat": "{{operation}}"
+          "expr": "last_over_time(k6_odb_read_duration_p95[1d])",
+          "legendFormat": "{{suite}} · {{operation}}"
         },
         {
           "refId": "B",
           "editorMode": "code",
-          "expr": "k6_vus",
+          "expr": "max_over_time(k6_vus[1d])",
           "legendFormat": "VUs"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Write p95 by operation (load)",
-      "description": "Mutation latency. The spec's absolute cap is 5 s; the armed threshold is usually tighter, derived from the baseline median. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "title": "Write p95 by operation",
+      "description": "Mutation latency. The spec's absolute cap is 5 s; the armed threshold is usually tighter, derived from the baseline median. The dashed grey line on the right axis is k6_vus — latency and errors are only interpretable against the load that produced them.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -219,7 +221,9 @@
             "drawStyle": "line",
             "lineWidth": 1,
             "fillOpacity": 5,
-            "showPoints": "auto"
+            "showPoints": "always",
+            "lineInterpolation": "stepAfter",
+            "pointSize": 5
           },
           "thresholds": {
             "mode": "absolute",
@@ -301,13 +305,13 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "k6_odb_write_duration_p95{suite=\"load\"}",
-          "legendFormat": "{{operation}}"
+          "expr": "last_over_time(k6_odb_write_duration_p95[1d])",
+          "legendFormat": "{{suite}} · {{operation}}"
         },
         {
           "refId": "B",
           "editorMode": "code",
-          "expr": "k6_vus",
+          "expr": "max_over_time(k6_vus[1d])",
           "legendFormat": "VUs"
         }
       ]
@@ -315,7 +319,7 @@
     {
       "type": "timeseries",
       "title": "Error rate",
-      "description": "Share of failed HTTP requests. The armed threshold is 1%. The dashed grey line on the right axis is k6_vus \u2014 latency and errors are only interpretable against the load that produced them.",
+      "description": "Share of failed HTTP requests. The armed threshold is 1%. The dashed grey line on the right axis is k6_vus — latency and errors are only interpretable against the load that produced them.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -334,7 +338,10 @@
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
-            "fillOpacity": 10
+            "fillOpacity": 10,
+            "lineInterpolation": "stepAfter",
+            "showPoints": "always",
+            "pointSize": 5
           },
           "thresholds": {
             "mode": "absolute",
@@ -411,13 +418,13 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "k6_http_req_failed_rate",
+          "expr": "last_over_time(k6_http_req_failed_rate[1d])",
           "legendFormat": "{{suite}}"
         },
         {
           "refId": "B",
           "editorMode": "code",
-          "expr": "k6_vus",
+          "expr": "max_over_time(k6_vus[1d])",
           "legendFormat": "VUs"
         }
       ]
@@ -445,8 +452,9 @@
           "custom": {
             "drawStyle": "points",
             "pointSize": 6,
-            "lineWidth": 0,
-            "showPoints": "always"
+            "lineWidth": 1,
+            "showPoints": "always",
+            "lineInterpolation": "stepAfter"
           },
           "thresholds": {
             "mode": "absolute",
@@ -481,7 +489,7 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "k6_gpp_scenario_pass_rate{suite=\"regression\"}",
+          "expr": "last_over_time(k6_gpp_scenario_pass_rate{suite=\"regression\"}[1d])",
           "legendFormat": "{{scenario}}"
         }
       ]
@@ -507,7 +515,10 @@
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
-            "fillOpacity": 0
+            "fillOpacity": 0,
+            "lineInterpolation": "stepAfter",
+            "showPoints": "always",
+            "pointSize": 5
           }
         },
         "overrides": []
@@ -530,8 +541,8 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "k6_gpp_scenario_duration_p95",
-          "legendFormat": "{{suite}} \u00b7 {{scenario}}"
+          "expr": "last_over_time(k6_gpp_scenario_duration_p95[1d])",
+          "legendFormat": "{{suite}} · {{scenario}}"
         }
       ]
     },
@@ -557,7 +568,10 @@
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 1,
-            "fillOpacity": 40
+            "fillOpacity": 40,
+            "lineInterpolation": "stepAfter",
+            "showPoints": "always",
+            "pointSize": 5
           }
         },
         "overrides": []
@@ -579,7 +593,7 @@
         {
           "refId": "A",
           "editorMode": "code",
-          "expr": "sum by (operation) (k6_odb_graphql_errors_total)",
+          "expr": "sum by (operation) (last_over_time(k6_odb_graphql_errors_total[1d]))",
           "legendFormat": "{{operation}}"
         }
       ]
