@@ -324,6 +324,19 @@ export function defineJourney(identity: JourneyIdentity): void {
   });
 
   test(t("scenario 4: edit the subtitle and read it back after a reload"), async () => {
+    // Parked, not deleted. Every locator this scenario needs is a CSS class on the obs badge
+    // (`obsBadgeSubtitle`, `obsBadgeSubtitleEdit`, `obsBadgeSubtitleInput`), and the testids
+    // that would replace them — items 2–6 of the ask — were skipped in lucuma-apps' first
+    // batch (wayfinder ticket 029). Unskip when they land; the body needs no other change.
+    //
+    // What stays uncovered meanwhile: the assertion below that the badge picks up an
+    // API-set subtitle is the suite's only UI-side proof of Explore's `observationEdit`
+    // subscription. `tests/COVERAGE.md` records the gap.
+    test.skip(
+      true,
+      "obs-badge subtitle testids not in Explore yet — wayfinder ticket 029",
+    );
+
     const observationId = journey.observationId!;
     expect(observationId, "scenario 3 must have created an observation").toBeTruthy();
 

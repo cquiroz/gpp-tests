@@ -6,6 +6,14 @@
 lucuma-apps `main` `d3de3e27a7` (2026-09-23), with the versions it pins: lucuma-react
 `v0.106.0`, primereact `10.9.9`.*
 
+> **Answered 2026-09-25 — the ids yes, the contract no.** lucuma-apps took 18 of the 23
+> (branch `data-testid-contract`) and dropped items **2–6**, the observation subtitle ids;
+> `journey.ts` scenario 4 is parked rather than held for them. Declined with them: the
+> manifest machinery — no `/testids.json`, no `version` field, no check in their CI, and no
+> constants file, the ids being literals at each element. "Shape: the manifest" and "Shape:
+> the check in lucuma-apps CI" below record what was asked for, not what was built — see
+> [ticket 029](../wayfinder/tickets/029-upstream-testid-contract-for-explore.md).
+
 ## The ask, in one sentence
 
 Put a `data-testid` on each of the 23 Explore elements listed below, keep the ids in one

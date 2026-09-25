@@ -15,7 +15,7 @@ reorder from real usage knowledge.
 |---|---|---|---|---|
 | Session & login | Guest login, injected standard sessions (pi/staff), logged-in shell renders | covered | `journey.spec.ts`, `journey-pi.spec.ts`, `journey-staff.spec.ts`, `standard-user.spec.ts` | P0 |
 | Program management | Create, select, list in Proposals & Programs dialog | covered | `journey.spec.ts` scenario 2 | P0 |
-| Program details | Name/subtitle edits, notes, program-level views | partial (subtitle edit only) | `journey.spec.ts` scenario 4 | P1 |
+| Program details | Name/subtitle edits, notes, program-level views | none (the subtitle edit is written but skipped) | `journey.spec.ts` scenario 4 — skipped pending the obs-badge testids, wayfinder ticket 029 | P1 |
 | Observations: lifecycle | Create, clone, delete, activate/deactivate | partial (create only) | `journey.spec.ts` scenario 3 | P0 |
 | Targets: manual sidereal | Empty sidereal target, coordinate entry | partial (created via UI, coordinates set via API) | `journey.spec.ts` scenario 3 | P1 |
 | Targets: catalog search | Simbad name search in the Add Target dialog | none | — | P1 (spec §12 item) |
