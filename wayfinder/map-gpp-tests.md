@@ -112,6 +112,11 @@ HITL), **028** (object store + attachment uploads — now blocks 017). Order of 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
 
+Regression breadth, queued after 021 → 022: **030** (an observation in every observing
+mode, both layers, regular PI) and **031** (Explore config-tile testids, claimed —
+written by us as a lucuma-apps PR). 030's two halves merge together once 031 is on
+Explore's dev hosting.
+
 ## Not yet specified
 
 - **Subscription round-trip SLO** — a provisional figure once 022 measures one.
