@@ -27,3 +27,21 @@ Also confirm while there that visitor and exchange are reachable through the sam
 
 Resolution records the PR, the ids that shipped, the dev deploy that carries them, and the
 `selectors.ts` commit that consumes them.
+
+## Findings so far
+
+**Written, uncommitted:** branch `observing-mode-testids` off lucuma-apps `main` (`46c237cbae`)
+in `~/code/noirlab/explore`. It compiles, and scalafmt has been run. Every id is present in the
+fullLinkJS bundle.
+
+| Id | Where |
+|---|---|
+| `explore-config-mode`, `explore-config-instrument`, `explore-config-accept` | `BasicConfigurationPanel.scala` |
+| `explore-config-row` + `data-instrument` (`Instrument.tag`), `data-focal-plane` (`FocalPlane.tag`, spectroscopy only) | `SpectroscopyModesTable.scala`, `ImagingModesTable.scala` |
+| `explore-sequence-planned` | `SequenceTile.scala` (the "Planned" time) |
+| `explore-sequence-step` | `SequenceTableBuilder.scala` (step rows; header rows excluded) |
+| `explore-visitor-{site,name,central-wavelength,ags-diameter,science-fov-diameter,total-time}` | `AlienVisitorConfigEditor.scala` — added 2026-09-28, since the visitor editor has no defaults |
+
+`dataInstrument` / `dataFocalPlane` sit next to `testId` in `explore/utils/package.scala`.
+Visitor, Keck and Subaru are options of the same Mode dropdown; GHOST and IGRINS-2 are rows in
+the spectroscopy table. Nothing is pushed and no PR has been opened.

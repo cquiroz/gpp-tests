@@ -162,6 +162,69 @@ export const proposalPartnersLabel = (page: Page): Locator =>
 export const proposalErrors = (page: Page): Locator =>
   page.getByTestId("explore-proposal-errors");
 
+/* ── Observation configuration (wayfinder ticket 031) ─────────────────────────────────
+ *
+ * The Configuration tile's mode picker (BasicConfigurationPanel), shown while an observation
+ * has no observing mode, and the Sequence tile. Dropdown options are addressed by their
+ * display label: they render in a PrimeReact overlay that carries no test ids, and the
+ * labels are Explore's `Display` instances, not free copy.
+ */
+
+/** The "Mode" dropdown: Spectroscopy, Imaging, Visitor, Keck, Subaru. */
+export const configModeDropdown = (page: Page): Locator =>
+  page.getByTestId("explore-config-mode");
+
+/** The instrument filter over the modes table ("All" when unset). */
+export const configInstrumentDropdown = (page: Page): Locator =>
+  page.getByTestId("explore-config-instrument");
+
+/** An option in whichever dropdown overlay is open. */
+export const dropdownOption = (page: Page, label: string): Locator =>
+  page.getByRole("option", { name: label, exact: true });
+
+/**
+ * The enabled rows of the spectroscopy or imaging modes table for one instrument, and for
+ * spectroscopy one focal plane (`FocalPlane.tag`: single_slit, ifu). Rows are virtualized,
+ * so only the first screenful exists in the DOM — which is all the scenario uses.
+ */
+export const configModeRows = (
+  page: Page,
+  instrumentTag: string,
+  focalPlane?: string,
+): Locator =>
+  page.locator(
+    `[data-testid="explore-config-row"][data-instrument="${instrumentTag}"]` +
+      (focalPlane ? `[data-focal-plane="${focalPlane}"]` : "") +
+      ":not([disabled])",
+  );
+
+/** "Accept Configuration"; disabled until the ITC has answered for the selected row. */
+export const configAcceptButton = (page: Page): Locator =>
+  page.getByTestId("explore-config-accept");
+
+/**
+ * The visitor editor (AlienVisitorConfigEditor): no field has a default, and Accept stays
+ * disabled until all six are set. `site` is a dropdown; the rest are text inputs.
+ */
+export const visitorField = (
+  page: Page,
+  field:
+    | "site"
+    | "name"
+    | "central-wavelength"
+    | "ags-diameter"
+    | "science-fov-diameter"
+    | "total-time",
+): Locator => page.getByTestId(`explore-visitor-${field}`);
+
+/** "Planned: …" in the Sequence tile title — present only once a time estimate exists. */
+export const sequencePlannedTime = (page: Page): Locator =>
+  page.getByTestId("explore-sequence-planned");
+
+/** Step rows of the generated sequence (header rows excluded). */
+export const sequenceSteps = (page: Page): Locator =>
+  page.getByTestId("explore-sequence-step");
+
 /* ── Observation badge: still on CSS classes ───────────────────────────────────────────
  *
  * Items 2–6 of the ask were not shipped, so these four keep the stylesheet handles they

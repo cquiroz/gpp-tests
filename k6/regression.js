@@ -8,13 +8,14 @@
 // pass-rate-over-time history in Grafana too (spec §7).
 import { fail } from "k6";
 import tempo from "./vendor/http-instrumentation-tempo.js";
-import { loginAsGuest } from "./lib/auth.js";
+import { loginAsGuest, loginAsStandardUser } from "./lib/auth.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
 import {
   calculatedResultsScenario,
   createObservationScenario,
   createProgramScenario,
   editSubtitleScenario,
+  observingModesScenario,
   readMixScenario,
   scenario,
 } from "./lib/scenarios.js";
@@ -69,5 +70,19 @@ export default function () {
   // is what waits for them to become READY.
   scenario("calculated-results", () =>
     calculatedResultsScenario(session, observation.observationId),
+  );
+
+  // An observation in every observing mode, as a regular PI (ticket 030). A missing PI is a
+  // red run, not a skip: CI always fabricates one, and locally the fix is one script.
+  const pi = loginAsStandardUser("TEST_PI");
+  if (!pi) {
+    fail(
+      "TEST_PI_REFRESH_TOKEN is not set: run stack/scripts/create-standard-users.sh and " +
+        "source the file it writes",
+    );
+  }
+  const piProgramId = createProgramScenario(pi, { name: `gpp-tests modes ${TESTID}` });
+  scenario("observing-modes", () =>
+    Boolean(piProgramId) && observingModesScenario(pi, piProgramId),
   );
 }

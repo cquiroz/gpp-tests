@@ -20,8 +20,8 @@ reorder from real usage knowledge.
 | Targets: manual sidereal | Empty sidereal target, coordinate entry | partial (created via UI, coordinates set via API) | `journey.spec.ts` scenario 3 | P1 |
 | Targets: catalog search | Simbad name search in the Add Target dialog | none | — | P1 (spec §12 item) |
 | Targets: editing | Magnitudes, proper motion, radial velocity, SED | none | — | P1 |
-| Instrument configuration | GMOS long-slit mode selection, wavelength, grating/filter | partial (set via API, not UI) | `journey.spec.ts` scenario 3 | P1 |
-| Calculated results (ITC/obscalc) | Exposure time / S2N appears for a valid config | covered (appearance asserted) | `journey.spec.ts` scenario 3 | P0 |
+| Instrument configuration | Mode selection in the basic configuration panel, per observing mode | covered for the mode picker: every single-target mode plus visitor/exchange, as a regular PI, taking Explore's defaults. MOS deferred — a custom mask is an upload (ticket 028). Per-field editing (grating, filter, wavelength) none | `observing-modes.spec.ts` (ticket 030) | P0 |
+| Calculated results (ITC/obscalc) | Exposure time / S2N appears for a valid config | covered (appearance asserted) for GMOS North long slit, and a time estimate + sequence for every mode | `journey.spec.ts` scenario 3, `observing-modes.spec.ts` | P0 |
 | Constraint sets | IQ, cloud extinction, sky background, water vapor, elevation | none | — | P1 |
 | Timing windows | Create/edit windows, repeat rules | none | — | P1 |
 | Observation groups | Scheduling groups, AND/OR groups, drag into groups | none | — | P1 |

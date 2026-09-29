@@ -60,3 +60,38 @@ produces an observation the odb can plan, daily, at both layers. Decided by `/gr
 
 Resolution records the fixture table, any modes shipped as expected failures and why,
 the first green nightly, and the added runtime and obscalc memory peak.
+
+## Findings so far
+
+**Built, uncommitted** (2026-09-28): `lib/observing-modes.js` (fixture table, 14 modes),
+`observingModesScenario` in `k6/lib/scenarios.js`, `loginAsStandardUser` in `k6/lib/auth.js`,
+`tests/e2e/observing-modes.spec.ts`, catalog row `observing-modes`, and `observationMode` plus
+`scienceRequirements`/`target` parameters in `lib/odb-operations.js`. `npm run check` green
+(172 tests, parity 31 ↔ 24).
+
+**Verified locally against the -dev images of 2026-09-28**:
+- GraphQL (all 14 modes in parallel): each has an estimate and a science sequence within
+  3–9 s. The k6 script itself was only `k6 inspect`ed — it needs the PI token sourced.
+- Browser, against a local Explore bundle carrying 031's ids: all 14 pass, 5–26 s each.
+
+**What the ODB/ITC require beyond the schema** (all recorded in the fixture comments):
+visitor needs `agsDiameter` and `scienceFovDiameter`; GNIRS imaging needs a `camera`; GHOST
+needs TimeAndCount exposure modes on both channels at one wavelength; Flamingos-2 imaging
+saturates on a 12 mag near-IR star while Flamingos-2 long slit needs thousands of exposures at
+15 mag — hence a fourth target family, `nearIrFaint`.
+
+**Deviations from the decisions above**:
+- *No `mode` tag in k6.* `lib/tags.js` fixes the label set at four keys. Each mode is a check
+  named after its key (`observing mode gmos-south-imaging has a sequence and time estimate`).
+- *The browser half runs serially* (Playwright `workers: 1`; decided 2026-09-28): 3 workers
+  would also run the guest/pi/staff journeys concurrently, and the PI journey's "which program
+  is new" check would race this spec. k6 keeps the 3-in-flight cap. The spec is marked
+  `mode: "parallel"`, so it parallelizes as soon as the workers allow.
+- *Visitor types its six fields* in the browser, because Explore's visitor editor has no
+  defaults. 031 grew by six ids for it.
+
+**Watch on the first nightlies: ITC memory.** For each observation Explore requests ITC
+results for every row of the modes table. On this Mac (8 GiB Docker VM, amd64 images under
+Rosetta) one full serial run OOM-killed the ITC at its 1 GiB limit, during GHOST; GHOST passed
+on its own once the ITC restarted. If the nightly shows it, set `ITC_MEM_LIMIT=2g` in CI — the
+runner has the headroom that an 8 GiB VM does not.

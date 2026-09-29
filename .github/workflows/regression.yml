@@ -100,6 +100,8 @@ jobs:
         run: |
           mkdir -p out
           source stack/.env.generated
+          # The observing-modes scenario logs in as the fabricated PI (ticket 030).
+          source stack/.env.standard-users
           output=()
           if [[ -n "$K6_PROMETHEUS_RW_SERVER_URL" ]]; then
             output=(-o experimental-prometheus-rw)

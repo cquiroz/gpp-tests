@@ -55,6 +55,7 @@ npm run stack:up                   # ~10-20 min the first time: 900+ ODB migrati
 source stack/.env.generated        # endpoints, keys, service JWT, CA path
 npm run verify:operations          # is the live ODB still the schema we compiled against?
 npm run e2e                        # the four v1 scenarios
+source stack/.env.standard-users   # the fabricated PI, for the observing-modes scenario
 npm run k6:regression              # the same scenarios at the GraphQL layer
 npm run stack:down                 # or CLEAN=1 ... to delete generated keys and caches too
 ```

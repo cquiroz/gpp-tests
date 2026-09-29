@@ -88,6 +88,42 @@ export function refreshed(session) {
   return { token: extractToken(response.body), issuedAt: Date.now() };
 }
 
+/**
+ * Log in as a fabricated standard user (`stack/scripts/create-standard-users.sh`), by the
+ * same route the browser suite uses (`tests/support/standard-users.ts`): the user's refresh
+ * token *is* its SSO session, so seeding it as the `lucuma-refresh-token` cookie and calling
+ * refresh-token yields a JWT for that user — no ORCID, no new mechanism. The token comes from
+ * `<PREFIX>_REFRESH_TOKEN`, which the regression workflow sources with the rest of the file.
+ *
+ * Refreshing later goes through `refreshed()`, which uses the same jar; its guest fallback
+ * does not apply here, so callers that outlive a JWT must check `reauthenticated`.
+ *
+ * @param {"TEST_PI" | "TEST_STAFF"} prefix
+ * @returns {GuestSession | undefined} undefined when the user has not been fabricated
+ */
+export function loginAsStandardUser(prefix) {
+  const refreshToken = __ENV[`${prefix}_REFRESH_TOKEN`];
+  if (!refreshToken) return undefined;
+
+  jar.set(endpoints.ssoRefreshUrl, "lucuma-refresh-token", refreshToken, {
+    domain: __ENV.SSO_COOKIE_DOMAIN || endpoints.domain,
+    path: "/",
+    secure: true,
+    http_only: true,
+  });
+  const response = http.post(endpoints.ssoRefreshUrl, null, {
+    jar,
+    tags: tags({ scenario: "login", operation: "RefreshToken" }),
+  });
+  if (response.status !== 200) {
+    fail(
+      `refresh-token returned ${response.status} for ${prefix}; ` +
+        `re-run stack/scripts/create-standard-users.sh against this stack`,
+    );
+  }
+  return { token: extractToken(response.body), issuedAt: Date.now() };
+}
+
 /** @param {string | ArrayBuffer | null} body */
 function extractToken(body) {
   const token = String(body || "").trim().replace(/^"|"$/g, "");
