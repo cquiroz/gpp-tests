@@ -45,3 +45,7 @@ fullLinkJS bundle.
 `dataInstrument` / `dataFocalPlane` sit next to `testId` in `explore/utils/package.scala`.
 Visitor, Keck and Subaru are options of the same Mode dropdown; GHOST and IGRINS-2 are rows in
 the spectroscopy table. Nothing is pushed and no PR has been opened.
+
+**Rebased 2026-10-01** onto `9b28610bdd` (`71ee4e4bc8`). `next-transit` had wrapped both modes
+tables in `TagMod(...).unless(props.altairParams.isPending)`, so the rows stay hidden while Altair
+guide stars are searched. The row attributes went inside that wrapper; selectors are unchanged.

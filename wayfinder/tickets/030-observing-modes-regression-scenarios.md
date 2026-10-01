@@ -95,3 +95,10 @@ results for every row of the modes table. On this Mac (8 GiB Docker VM, amd64 im
 Rosetta) one full serial run OOM-killed the ITC at its 1 GiB limit, during GHOST; GHOST passed
 on its own once the ITC restarted. If the nightly shows it, set `ITC_MEM_LIMIT=2g` in CI — the
 runner has the headroom that an 8 GiB VM does not.
+
+**Re-verified 2026-10-01** against the 031 branch rebased onto lucuma-apps main
+(`71ee4e4bc8`) and that day's -dev images. All 14 modes pass in one serial browser run (3.5 min).
+The rest of the e2e suite also passes: 14 passed, 3 skipped (the parked scenario 4s). A first
+attempt failed in a cascade when a Postgres backend was OOM-killed on the 8 GiB Docker VM, which
+killed the odb/SSO pools. Restarting those services cleared it — the same local limit the stack
+notes describe, not a test fault.
