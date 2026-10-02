@@ -184,20 +184,39 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=9
 
-# Phase 2 of research/aws-load-target-options.md: the compose stack on one EC2
-# instance, driven by k6 from a second one, by hand, to find out whether AWS
-# numbers tell us anything Heroku's cannot. Everything is tagged gpp-tests:loadtest=1
-# — the discriminator a phase-3 IAM policy would condition on.
+TOTAL_STAGES=10
+
+# The compose stack on one EC2 instance, driven by k6 from a second one, by hand
+# (research/aws-load-target-options.md phase 2) — under NOIRLab's launch procedure for the
+# shared account 384445651298:
+#
+#   - us-west-2, launched only through the launch template IT maintains for GPP
+#     (NOIRLab-Software-GPP: private subnet nl-vpc-private-us-west-2a, no public IP, the
+#     HTTP/HTTPS/SSH security groups, the SSM instance profile, Department=Software tags);
+#   - access only through AWS SSM — ssh and rsync tunnel through `ssm start-session`, by
+#     instance id;
+#   - an Ubuntu LTS image, which ships the SSM agent (the template's own image is arm64
+#     Amazon Linux, and the lucuma images are amd64-only, so the image is overridden).
+#
+# The account is shared with production-adjacent NOIRLab infrastructure, and the procedure
+# lets this user stop and terminate *any* Department=Software instance. So this wizard only
+# ever starts, stops or terminates instance ids it launched itself, and re-checks each one's
+# gpp-tests:loadtest=1 tag and Name before doing so — see owned_or_die.
+#
+# Verified by hand on 2026-10-02 (a t3.micro through the template: SSM online in ~18s, ssh
+# and rsync over SSM, egress to GitHub and both registries through the NAT).
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 mkdir -p out
-ENV_FILE="out/aws-loadtest.env"   # gitignored, and separate from the repo's own .env
+# Gitignored, and separate from the repo's own .env. Named for the region so the values
+# saved by the first (us-east-1, public-IP) runs are never offered back.
+ENV_FILE="out/aws-loadtest-us-west-2.env"
+KNOWN_HOSTS="out/aws-known_hosts"
 
 TAG_KEY="gpp-tests:loadtest"
 TAG_VALUE="1"
-SPEC='ResourceType=instance,Tags=[{Key=Name,Value=REPLACED},{Key='"$TAG_KEY"',Value='"$TAG_VALUE"'}]'
+NAMES_WE_LAUNCH="gpp-tests-target gpp-tests-generator"
 
 # awsx — the AWS CLI with this run's region and profile already applied.
 awsx() {
@@ -205,35 +224,85 @@ awsx() {
   aws --region "$AWS_REGION" ${AWS_PROFILE:+--profile "$AWS_PROFILE"} "$@"
 }
 
-# ssh_to / rsync_to — the target and generator are reached the same way.
-ssh_to() {
-  local host="$1"; shift
-  ssh -i "$PEM_PATH" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
-      -o ServerAliveInterval=30 "ubuntu@$host" "$@"
+# ssh over SSM: no public IPs exist, so every connection is tunnelled through
+# `ssm start-session` (AWS-StartSSHSession) to the instance id, with the key pair for login.
+# One generated ssh config carries it, so ssh, scp and rsync all read the same settings —
+# rsync's -e does not reliably preserve a quoted ProxyCommand.
+SSH_CONFIG="out/aws-ssh_config"
+write_ssh_config() {
+  cat > "$SSH_CONFIG" <<CONFIG
+Host i-*
+  User ubuntu
+  IdentityFile $PEM_PATH
+  IdentitiesOnly yes
+  ProxyCommand aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile $REPO_DIR/$KNOWN_HOSTS
+  ConnectTimeout 30
+  ServerAliveInterval 30
+CONFIG
 }
+ssh_to()   { local id="$1"; shift; ssh -F "$SSH_CONFIG" "$id" "$@"; }
+scp_from() { scp -F "$SSH_CONFIG" "$1:$2" "$3"; }
 rsync_to() {
-  local host="$1"
-  rsync -az --delete \
-    -e "ssh -i $PEM_PATH -o StrictHostKeyChecking=accept-new" \
+  rsync -az --delete -e "ssh -F $REPO_DIR/$SSH_CONFIG" \
     --exclude node_modules --exclude .direnv --exclude stack/.cache \
     --exclude out --exclude test-results --exclude playwright-report \
-    "$REPO_DIR/" "ubuntu@$host:~/gpp-tests/"
+    --exclude 'stack/.env*' --exclude awskeys.txt \
+    "$REPO_DIR/" "$1:~/gpp-tests/"
 }
 
-banner "GPP load test on AWS — first manual run"
+# owned_or_die ID... — refuse to touch an instance this wizard did not launch. The tag and
+# the Name are both re-read from AWS, so a stale id in $ENV_FILE cannot point the lifecycle
+# calls at someone else's Department=Software instance.
+owned_or_die() {
+  local id tag name
+  for id in "$@"; do
+    tag="$(awsx ec2 describe-instances --instance-ids "$id" \
+      --query "Reservations[0].Instances[0].Tags[?Key=='$TAG_KEY']|[0].Value" --output text 2>/dev/null || true)"
+    name="$(awsx ec2 describe-instances --instance-ids "$id" \
+      --query "Reservations[0].Instances[0].Tags[?Key=='Name']|[0].Value" --output text 2>/dev/null || true)"
+    if [[ "$tag" != "$TAG_VALUE" || " $NAMES_WE_LAUNCH " != *" $name "* ]]; then
+      warn "refusing to touch $id: it is not an instance this wizard launched ($TAG_KEY=$tag, Name=$name)"
+      exit 1
+    fi
+  done
+}
+
+# wait_for_ssm ID — the agent registers ~20s after the instance runs; ssh needs it Online.
+wait_for_ssm() {
+  local id="$1" status=""
+  for _ in $(seq 1 60); do
+    status="$(awsx ssm describe-instance-information --filters "Key=InstanceIds,Values=$id" \
+      --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
+    [[ "$status" == "Online" ]] && return 0
+    sleep 5
+  done
+  warn "$id never came Online in SSM (last status: $status)"
+  exit 1
+}
+
+banner "GPP load test on AWS — NOIRLab us-west-2"
 
 # ── Stage 1 ───────────────────────────────────────────────────────────────
 stage "Preflight — the AWS identity you are about to spend money with"
-say "This wizard launches two EC2 instances, runs a 40-minute load profile"
-say "against them, and stops them again. Roughly \$1.16 for the run."
+say "This wizard launches two EC2 instances through NOIRLab's GPP launch template,"
+say "runs the k6 regression and load suites against them, and stops them again."
+say "Roughly \$1.16 per hour while both run."
 printf '\n'
 
 command -v aws >/dev/null 2>&1 || { warn "the AWS CLI is not installed — https://aws.amazon.com/cli/"; exit 1; }
 command -v rsync >/dev/null 2>&1 || { warn "rsync is required (it ships with macOS)"; exit 1; }
+command -v session-manager-plugin >/dev/null 2>&1 || {
+  warn "the AWS Session Manager plugin is not installed — all access goes through SSM"
+  step "brew install --cask session-manager-plugin"
+  exit 1
+}
 
-ask AWS_REGION  "AWS region [us-east-1]:"
-[[ -n "$AWS_REGION" ]] || AWS_REGION="us-east-1"
-ask AWS_PROFILE "AWS CLI profile (blank for the default):"
+ask AWS_REGION  "AWS region [us-west-2]:"
+[[ -n "$AWS_REGION" ]] || AWS_REGION="us-west-2"
+ask AWS_PROFILE "AWS CLI profile [gpp-tests]:"
+[[ -n "$AWS_PROFILE" ]] || AWS_PROFILE="gpp-tests"
 
 CALLER_ARN="$(awsx sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
 if [[ -z "$CALLER_ARN" ]]; then
@@ -246,32 +315,35 @@ say "account:  $ACCOUNT_ID"
 say "identity: $CALLER_ARN"
 say ""
 
-# The root user cannot be constrained by IAM at all, which is exactly the control
-# that made a separate AWS account the safer option. Refuse rather than warn.
+# Root cannot be constrained by IAM, and the launch procedure is IAM. Refuse rather than warn.
 if [[ "$CALLER_ARN" == *":root" ]]; then
-  warn "That is the account ROOT user."
-  say "IAM policies cannot constrain root, so the tag-scoped rail this tooling is"
-  say "built around would have nothing to bite on — and root can close the account."
-  say ""
-  step "Enable MFA on root, then IAM → Users → create 'gpp-tests-loadtest'."
-  step "Attach AdministratorAccess, create a CLI access key."
-  step "aws configure --profile gpp-tests, then re-run this wizard."
+  warn "That is the account ROOT user — use your own IAM user's profile."
   exit 1
 fi
 
-if ! confirm "Is $ACCOUNT_ID the dedicated TEST account (no production in it)?"; then
-  say "Stopping. Point this at the test account and re-run."
-  exit 1
-fi
+warn "This account is SHARED (EKS clusters, databases, other teams' instances)."
+note "  This wizard launches only through the GPP launch template, and only ever"
+note "  starts, stops or terminates instances it launched and tagged $TAG_KEY=$TAG_VALUE."
 write_env AWS_REGION "$AWS_REGION"
 write_env AWS_PROFILE "$AWS_PROFILE"
 pause
 
 # ── Stage 2 ───────────────────────────────────────────────────────────────
-stage "Key pair and security group"
-say "SSH is opened to your current public IP only; the target's 443 is reachable"
-say "only from inside the group, i.e. from the generator."
+stage "Launch template and key pair"
+say "The template carries the network, security groups and instance profile the"
+say "procedure requires; the key pair is only for ssh tunnelled through SSM."
 printf '\n'
+
+ask LAUNCH_TEMPLATE "Launch template name [NOIRLab-Software-GPP]:"
+[[ -n "$LAUNCH_TEMPLATE" ]] || LAUNCH_TEMPLATE="NOIRLab-Software-GPP"
+TEMPLATE_SUMMARY="$(awsx ec2 describe-launch-template-versions --launch-template-name "$LAUNCH_TEMPLATE" \
+  --versions '$Default' --query 'LaunchTemplateVersions[0].LaunchTemplateData.[NetworkInterfaces[0].SubnetId,IamInstanceProfile.Name,join(`,`,NetworkInterfaces[0].Groups)]' \
+  --output text 2>/dev/null || true)"
+[[ -n "$TEMPLATE_SUMMARY" ]] || { warn "launch template $LAUNCH_TEMPLATE not found in $AWS_REGION"; exit 1; }
+read -r SUBNET_ID PROFILE_NAME SG_IDS <<<"$TEMPLATE_SUMMARY"
+say "template $LAUNCH_TEMPLATE: subnet $SUBNET_ID, profile $PROFILE_NAME"
+note "  security groups $SG_IDS"
+write_env LAUNCH_TEMPLATE "$LAUNCH_TEMPLATE"
 
 ask KEY_NAME "EC2 key pair name [gpp-tests-loadtest]:"
 [[ -n "$KEY_NAME" ]] || KEY_NAME="gpp-tests-loadtest"
@@ -279,52 +351,18 @@ PEM_PATH="$HOME/.ssh/$KEY_NAME.pem"
 
 if awsx ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
   say "key pair $KEY_NAME already exists in $AWS_REGION"
-  [[ -f "$PEM_PATH" ]] || { warn "but $PEM_PATH is missing — delete the key pair in EC2 and re-run"; exit 1; }
+  [[ -f "$PEM_PATH" ]] || { warn "but $PEM_PATH is missing — pick another name, or delete the key pair in EC2"; exit 1; }
 else
+  # Never overwrite a private key: a same-named .pem belongs to a key pair elsewhere.
+  [[ ! -e "$PEM_PATH" ]] || { warn "$PEM_PATH already exists but is not a key pair in $AWS_REGION — pick another name"; exit 1; }
   awsx ec2 create-key-pair --key-name "$KEY_NAME" \
     --query KeyMaterial --output text > "$PEM_PATH"
   chmod 600 "$PEM_PATH"
   say "created $KEY_NAME → $PEM_PATH"
 fi
-
-VPC_ID="$(awsx ec2 describe-vpcs --filters Name=is-default,Values=true \
-  --query 'Vpcs[0].VpcId' --output text)"
-[[ "$VPC_ID" != "None" ]] || { warn "no default VPC in $AWS_REGION — create one, or edit this script"; exit 1; }
-say "VPC: $VPC_ID (default)"
-
-# Both instances must land in the SAME availability zone. Cross-AZ traffic is billed
-# per GB each way, and a 200-VU run moves a few GB between generator and target — so
-# leaving the AZ to chance would put a data-transfer charge on the run, and add a
-# network hop to the latency being measured.
-SUBNET_ID="$(awsx ec2 describe-subnets --filters Name=vpc-id,Values="$VPC_ID" \
-  Name=default-for-az,Values=true --query 'Subnets[0].SubnetId' --output text)"
-SUBNET_AZ="$(awsx ec2 describe-subnets --subnet-ids "$SUBNET_ID" \
-  --query 'Subnets[0].AvailabilityZone' --output text)"
-say "subnet: $SUBNET_ID ($SUBNET_AZ) — both instances go here, so the load stays in one AZ"
-write_env SUBNET_ID "$SUBNET_ID"
-
-SG_ID="$(awsx ec2 describe-security-groups \
-  --filters Name=group-name,Values=gpp-tests-loadtest Name=vpc-id,Values="$VPC_ID" \
-  --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo None)"
-if [[ "$SG_ID" == "None" || -z "$SG_ID" ]]; then
-  SG_ID="$(awsx ec2 create-security-group --group-name gpp-tests-loadtest \
-    --description "gpp-tests load test - ephemeral" --vpc-id "$VPC_ID" \
-    --query GroupId --output text)"
-  awsx ec2 create-tags --resources "$SG_ID" --tags "Key=$TAG_KEY,Value=$TAG_VALUE"
-  say "created security group $SG_ID"
-fi
-
-MY_IP="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
-say "your public IP: $MY_IP"
-awsx ec2 authorize-security-group-ingress --group-id "$SG_ID" \
-  --protocol tcp --port 22 --cidr "$MY_IP/32" >/dev/null 2>&1 \
-  && say "opened SSH from $MY_IP/32" || note "SSH rule already present"
-awsx ec2 authorize-security-group-ingress --group-id "$SG_ID" \
-  --protocol tcp --port 443 --source-group "$SG_ID" >/dev/null 2>&1 \
-  && say "opened 443 within the group" || note "443 rule already present"
-
 write_env KEY_NAME "$KEY_NAME"
-write_env SG_ID "$SG_ID"
+write_ssh_config
+say "ssh over SSM configured in $SSH_CONFIG"
 pause
 
 # ── Stage 3 ───────────────────────────────────────────────────────────────
@@ -338,45 +376,57 @@ ask TARGET_TYPE "Target instance type [m7i.4xlarge]:"
 [[ -n "$TARGET_TYPE" ]] || TARGET_TYPE="m7i.4xlarge"
 ask GEN_TYPE "Generator instance type [c7i.2xlarge]:"
 [[ -n "$GEN_TYPE" ]] || GEN_TYPE="c7i.2xlarge"
+ask MAX_HOURS "Safety stop after how many hours of uptime [8]:"
+[[ -n "$MAX_HOURS" ]] || MAX_HOURS=8
 
-AMI_ID="$(awsx ssm get-parameters \
-  --names /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
-  --query 'Parameters[0].Value' --output text)"
-say "Ubuntu 24.04 AMI: $AMI_ID"
+# Canonical's image, found through ec2:DescribeImages — this user has no ssm:GetParameters.
+AMI_ID="$(awsx ec2 describe-images --owners 099720109477 \
+  --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' \
+  --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)"
+say "Ubuntu 24.04 amd64 image: $AMI_ID"
+
+# First boot only: stop (not terminate) after MAX_HOURS, so a forgotten pair stops billing
+# for compute without losing its disks. A restarted pair does not re-arm it.
+USER_DATA="$(printf '#!/bin/bash\nshutdown -P +%s\n' "$(( MAX_HOURS * 60 ))")"
 
 launch() {
-  local name="$1" type="$2" disk="$3"
+  local name="$1" type="$2" disk="$3" tags
+  tags="{Key=Name,Value=$name},{Key=Department,Value=Software},{Key=Project,Value=GPP},{Key=$TAG_KEY,Value=$TAG_VALUE}"
   awsx ec2 run-instances \
-    --image-id "$AMI_ID" --instance-type "$type" --key-name "$KEY_NAME" \
-    --security-group-ids "$SG_ID" --subnet-id "$SUBNET_ID" --count 1 \
-    --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$disk,VolumeType=gp3}" \
-    --tag-specifications "${SPEC/REPLACED/$name}" \
+    --launch-template "LaunchTemplateName=$LAUNCH_TEMPLATE" \
+    --image-id "$AMI_ID" --instance-type "$type" --key-name "$KEY_NAME" --count 1 \
+    --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$disk,VolumeType=gp3,DeleteOnTermination=true}" \
+    --instance-initiated-shutdown-behavior stop \
+    --user-data "$USER_DATA" \
+    --tag-specifications "ResourceType=instance,Tags=[$tags]" \
+      "ResourceType=volume,Tags=[{Key=Department,Value=Software},{Key=Project,Value=GPP},{Key=$TAG_KEY,Value=$TAG_VALUE}]" \
     --query 'Instances[0].InstanceId' --output text
 }
 
 if [[ -z "$(_existing TARGET_ID || true)" ]]; then
+  # The template's root disk is ~7 GB; the stack's images and database need far more.
   TARGET_ID="$(launch gpp-tests-target "$TARGET_TYPE" 60)"
   GEN_ID="$(launch gpp-tests-generator "$GEN_TYPE" 30)"
-  say "launched target $TARGET_ID and generator $GEN_ID — waiting for them to run"
-  awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
   write_env TARGET_ID "$TARGET_ID"
   write_env GEN_ID "$GEN_ID"
+  say "launched target $TARGET_ID and generator $GEN_ID — waiting for them to run"
+  awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
 else
   TARGET_ID="$(_existing TARGET_ID)"; GEN_ID="$(_existing GEN_ID)"
+  owned_or_die "$TARGET_ID" "$GEN_ID"
   say "reusing $TARGET_ID / $GEN_ID from a previous run"
   awsx ec2 start-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null 2>&1 || true
   awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
 fi
 
-ip_of() { awsx ec2 describe-instances --instance-ids "$1" --query "$2" --output text; }
-TARGET_IP="$(ip_of "$TARGET_ID" 'Reservations[0].Instances[0].PublicIpAddress')"
-TARGET_PRIVATE_IP="$(ip_of "$TARGET_ID" 'Reservations[0].Instances[0].PrivateIpAddress')"
-GEN_IP="$(ip_of "$GEN_ID" 'Reservations[0].Instances[0].PublicIpAddress')"
-write_env TARGET_IP "$TARGET_IP"
+TARGET_PRIVATE_IP="$(awsx ec2 describe-instances --instance-ids "$TARGET_ID" \
+  --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)"
 write_env TARGET_PRIVATE_IP "$TARGET_PRIVATE_IP"
-write_env GEN_IP "$GEN_IP"
-say "target $TARGET_IP (private $TARGET_PRIVATE_IP) · generator $GEN_IP"
-warn "both are billing from now until stage 9."
+say "waiting for both to register with SSM"
+wait_for_ssm "$TARGET_ID"
+wait_for_ssm "$GEN_ID"
+say "target $TARGET_ID (private $TARGET_PRIVATE_IP) · generator $GEN_ID — both Online in SSM"
+warn "both are billing from now until stage 10 (or the ${MAX_HOURS}h safety stop)."
 pause
 
 # ── Stage 4 ───────────────────────────────────────────────────────────────
@@ -394,14 +444,14 @@ else
   ask_secret HEROKU_API_KEY "Heroku API key:"
 fi
 
-say "waiting for SSH on $TARGET_IP"
+say "waiting for ssh over SSM on $TARGET_ID"
 for _ in $(seq 1 30); do
-  ssh_to "$TARGET_IP" true >/dev/null 2>&1 && break
+  ssh_to "$TARGET_ID" true >/dev/null 2>&1 && break
   sleep 10
 done
 
 say "installing prerequisites"
-ssh_to "$TARGET_IP" bash -s <<'REMOTE'
+ssh_to "$TARGET_ID" bash -s <<'REMOTE'
 set -euo pipefail
 sudo apt-get update -qq
 sudo apt-get install -y -qq docker.io docker-compose-v2 git curl gpg jq rsync >/dev/null
@@ -411,9 +461,9 @@ sudo usermod -aG docker ubuntu
 REMOTE
 
 say "syncing the working copy (not a clone — this tests the code you have)"
-rsync_to "$TARGET_IP"
+rsync_to "$TARGET_ID"
 
-# stack/docker-compose.yml ships CI-sized memory limits — odb 2g, postgres 1g, itc 1g,
+# stack/docker-compose.yml ships CI-sized memory limits — odb 2g, postgres 2g, itc 1g,
 # obscalc 1g, sso 768m, caddy 256m, hasura 512m — because its day job is booting on a 2-core
 # GitHub runner. Left alone on a load target they are what you measure, not the machine.
 #
@@ -442,24 +492,24 @@ note "  Caps rather than reservations. Override any of them in the environment; 
 note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
 
 say "booting the stack"
-ssh_to "$TARGET_IP" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
+ssh_to "$TARGET_ID" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
 say ""
-say "the stack is up and its seven readiness checks passed"
+say "the stack is up, its readiness checks passed, and the standard users are fabricated"
 pause
 
 # ── Stage 5 ───────────────────────────────────────────────────────────────
 stage "Prepare the generator"
-say "k6 and Node, the same working copy, and /etc/hosts pointing the stack's"
-say "names at the target's PRIVATE ip — so the load stays inside the VPC."
+say "k6 and Node, the same working copy, /etc/hosts pointing the stack's names at"
+say "the target's private ip, and the fabricated PI copied from the target."
 printf '\n'
 
-say "waiting for SSH on $GEN_IP"
+say "waiting for ssh over SSM on $GEN_ID"
 for _ in $(seq 1 30); do
-  ssh_to "$GEN_IP" true >/dev/null 2>&1 && break
+  ssh_to "$GEN_ID" true >/dev/null 2>&1 && break
   sleep 10
 done
 
-ssh_to "$GEN_IP" bash -s <<'REMOTE'
+ssh_to "$GEN_ID" bash -s <<'REMOTE'
 set -euo pipefail
 sudo apt-get update -qq
 sudo apt-get install -y -qq curl ca-certificates git rsync >/dev/null
@@ -481,12 +531,18 @@ fi
 k6 version
 REMOTE
 
-rsync_to "$GEN_IP"
+rsync_to "$GEN_ID"
 
-ssh_to "$GEN_IP" "sudo sed -i '/gpp-test.internal/d' /etc/hosts && \
+ssh_to "$GEN_ID" "sudo sed -i '/gpp-test.internal/d' /etc/hosts && \
   echo '$TARGET_PRIVATE_IP odb.gpp-test.internal sso.gpp-test.internal itc.gpp-test.internal explore.gpp-test.internal prefs.gpp-test.internal' \
   | sudo tee -a /etc/hosts >/dev/null"
 say "generator resolves the stack at $TARGET_PRIVATE_IP"
+
+# The observing-modes scenario logs in as the fabricated PI (ticket 030). The file is
+# streamed target → laptop → generator and never printed or written locally.
+ssh_to "$TARGET_ID" "cat ~/gpp-tests/stack/.env.standard-users" \
+  | ssh_to "$GEN_ID" "umask 077 && cat > ~/gpp-tests/stack/.env.standard-users"
+say "the fabricated PI is on the generator"
 pause
 
 # ── Stage 6 ───────────────────────────────────────────────────────────────
@@ -500,12 +556,13 @@ K6_ENV="SUITE=load \
 ODB_GRAPHQL_URL=https://odb.gpp-test.internal/odb \
 SSO_URL=https://sso.gpp-test.internal"
 
-ssh_to "$GEN_IP" "cd ~/gpp-tests && $K6_ENV \
+ssh_to "$GEN_ID" "cd ~/gpp-tests && $K6_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
   MIN_CHECK_RATE=0.95 k6 run k6/load.js" || {
-    warn "the smoke run failed — fix this before the full profile"
-    note "  ssh -i $PEM_PATH ubuntu@$GEN_IP    then look at ~/gpp-tests"
-    note "  ssh -i $PEM_PATH ubuntu@$TARGET_IP then: cd gpp-tests && docker compose logs odb"
+    warn "the smoke run failed — fix this before going further"
+    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $TARGET_ID"
+    note "    then: cd ~ubuntu/gpp-tests && sudo docker compose -f stack/docker-compose.yml logs odb"
     exit 1
   }
 say ""
@@ -513,77 +570,106 @@ say "plumbing confirmed"
 pause
 
 # ── Stage 7 ───────────────────────────────────────────────────────────────
-stage "The full profile — 0→50→200 VUs, ~40 minutes"
+stage "Regression suite — every v1 scenario plus every observing mode"
+say "k6/regression.js, as the nightly runs it: the guest scenarios, then one"
+say "observation per observing mode as the fabricated PI (ticket 030). A few minutes."
+printf '\n'
+
+# Output goes to a file first and is printed after: a `| tee` would report tee's exit code,
+# and the remote shell is dash, which has no pipefail.
+if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && set +a && \
+  SUITE=regression k6 run --summary-export out/k6-regression-summary.json k6/regression.js \
+  > out/k6-regression.log 2>&1; rc=\$?; cat out/k6-regression.log; exit \$rc"; then
+  say ""
+  say "regression green on AWS"
+else
+  warn "the regression suite failed — its log is collected in stage 9"
+  confirm "Carry on to the load profile anyway?" || { say "Stopping here — nothing torn down."; exit 1; }
+fi
+pause
+
+# ── Stage 8 ───────────────────────────────────────────────────────────────
+stage "The full load profile — 0→50→200 VUs, ~40 minutes"
 say "OTEL_ENVIRONMENT=aws-loadtest tags the summary as its own environment, so"
 say "these numbers never blend into a Heroku baseline."
 printf '\n'
 
-GRAFANA_ARGS=""
-if confirm "Stream metrics to Grafana Cloud live?"; then
-  ask       GC_PROM_RW_URL      "Prometheus remote-write URL:"
-  ask       GC_PROM_INSTANCE_ID "Instance ID (username):"
-  ask_secret GC_PROM_TOKEN      "Access policy token:"
-  write_env GC_PROM_RW_URL "$GC_PROM_RW_URL"
-  write_env GC_PROM_INSTANCE_ID "$GC_PROM_INSTANCE_ID"
-  GRAFANA_ARGS="-o experimental-prometheus-rw"
-  K6_ENV="$K6_ENV \
+RAN_LOAD=""
+if confirm "Run the 40-minute load profile now?"; then
+  GRAFANA_ARGS=""
+  if confirm "Stream metrics to Grafana Cloud live?"; then
+    ask       GC_PROM_RW_URL      "Prometheus remote-write URL:"
+    ask       GC_PROM_INSTANCE_ID "Instance ID (username):"
+    ask_secret GC_PROM_TOKEN      "Access policy token:"
+    write_env GC_PROM_RW_URL "$GC_PROM_RW_URL"
+    write_env GC_PROM_INSTANCE_ID "$GC_PROM_INSTANCE_ID"
+    GRAFANA_ARGS="-o experimental-prometheus-rw"
+    K6_ENV="$K6_ENV \
 K6_PROMETHEUS_RW_SERVER_URL='$GC_PROM_RW_URL' \
 K6_PROMETHEUS_RW_USERNAME='$GC_PROM_INSTANCE_ID' \
 K6_PROMETHEUS_RW_PASSWORD='$GC_PROM_TOKEN' \
 K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
+  fi
+
+  # Detached, so a dropped SSM session or a sleeping laptop cannot lose the run.
+  ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
+    > out/k6-run.log 2>&1 & sleep 5" || true
+  say "running detached on the generator; following the log."
+  note "Ctrl-C stops the tail, not the run. Re-attach with:"
+  note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+  note "    then: tail -f ~ubuntu/gpp-tests/out/k6-run.log"
+  printf '\n'
+  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -f 'k6 run' | head -1) gpp-tests/out/k6-run.log" || true
+  RAN_LOAD=1
+  pause "Run finished — press Enter to collect the results"
+else
+  say "skipped the load profile"
 fi
 
-confirm "Start the 40-minute run now?" || { say "Stopping here — nothing torn down."; exit 0; }
-
-# Detached, so a dropped SSH connection or a sleeping laptop cannot lose the run.
-ssh_to "$GEN_IP" "cd ~/gpp-tests && mkdir -p out && \
-  nohup env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
-  k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
-  > out/k6-run.log 2>&1 & sleep 5" || true
-say "running detached on the generator; following the log."
-note "Ctrl-C stops the tail, not the run. Re-attach with:"
-note "  ssh -i $PEM_PATH ubuntu@$GEN_IP 'tail -f gpp-tests/out/k6-run.log'"
-printf '\n'
-ssh_to "$GEN_IP" "tail -f --pid=\$(pgrep -f 'k6 run' | head -1) gpp-tests/out/k6-run.log" || true
-pause "Run finished — press Enter to collect the results"
-
-# ── Stage 8 ───────────────────────────────────────────────────────────────
+# ── Stage 9 ───────────────────────────────────────────────────────────────
 stage "Collect the numbers"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-scp -i "$PEM_PATH" -o StrictHostKeyChecking=accept-new \
-  "ubuntu@$GEN_IP:~/gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json"
-scp -i "$PEM_PATH" -o StrictHostKeyChecking=accept-new \
-  "ubuntu@$GEN_IP:~/gpp-tests/out/k6-run.log" "out/k6-aws-$STAMP.log" 2>/dev/null || true
-say "saved out/k6-aws-$STAMP.json"
-printf '\n'
+scp_from "$GEN_ID" "gpp-tests/out/k6-regression-summary.json" "out/k6-aws-regression-$STAMP.json" 2>/dev/null \
+  && say "saved out/k6-aws-regression-$STAMP.json" || warn "no regression summary to collect"
+scp_from "$GEN_ID" "gpp-tests/out/k6-regression.log" "out/k6-aws-regression-$STAMP.log" 2>/dev/null || true
 
-node --input-type=commonjs -e '
-const s = require("./out/k6-aws-'"$STAMP"'.json");
-const m = s.metrics ?? {};
-const p95 = (k) => m[k]?.["p(95)"]?.toFixed(1) ?? "—";
-console.log("  target        : '"$TARGET_TYPE"' (generator '"$GEN_TYPE"')");
-console.log("  http p95      :", p95("http_req_duration"), "ms");
-console.log("  odb read  p95 :", p95("odb_read_duration"), "ms");
-console.log("  odb write p95 :", p95("odb_write_duration"), "ms");
-const failed = m.http_req_failed?.value;
-if (failed !== undefined) console.log("  request errors:", (failed * 100).toFixed(2) + "%");
-const pass = m.gpp_scenario_pass;
-if (pass) console.log("  scenario pass :", (pass.value * 100).toFixed(1) + "%");
-' || warn "could not summarise — the raw JSON is in out/"
+if [[ -n "$RAN_LOAD" ]]; then
+  scp_from "$GEN_ID" "gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-run.log" "out/k6-aws-$STAMP.log" 2>/dev/null || true
+  say "saved out/k6-aws-$STAMP.json"
+  printf '\n'
 
-printf '\n'
-note "No Heroku baseline exists yet (M4 unprovisioned), so this is an absolute"
-note "number on known hardware rather than a comparison. Keep the JSON: it is the"
-note "first data point, and stage 3's instance types are what produced it."
+  node --input-type=commonjs -e '
+  const s = require("./out/k6-aws-'"$STAMP"'.json");
+  const m = s.metrics ?? {};
+  const p95 = (k) => m[k]?.["p(95)"]?.toFixed(1) ?? "—";
+  console.log("  target        : '"$TARGET_TYPE"' (generator '"$GEN_TYPE"')");
+  console.log("  http p95      :", p95("http_req_duration"), "ms");
+  console.log("  odb read  p95 :", p95("odb_read_duration"), "ms");
+  console.log("  odb write p95 :", p95("odb_write_duration"), "ms");
+  const failed = m.http_req_failed?.value;
+  if (failed !== undefined) console.log("  request errors:", (failed * 100).toFixed(2) + "%");
+  const pass = m.gpp_scenario_pass;
+  if (pass) console.log("  scenario pass :", (pass.value * 100).toFixed(1) + "%");
+  ' || warn "could not summarise — the raw JSON is in out/"
+
+  printf '\n'
+  note "No Heroku baseline exists yet (M4 unprovisioned), so this is an absolute"
+  note "number on known hardware rather than a comparison. Keep the JSON: it is a"
+  note "data point, and stage 3's instance types are what produced it."
+fi
 pause
 
-# ── Stage 9 ───────────────────────────────────────────────────────────────
+# ── Stage 10 ──────────────────────────────────────────────────────────────
 stage "Tear down — the stage that decides the bill"
+owned_or_die "$TARGET_ID" "$GEN_ID"
 warn "Two instances are still running: $TARGET_ID and $GEN_ID"
 say ""
 say "  stop      keeps the disks (a few \$/month), boots again in minutes"
 say "  terminate leaves nothing behind at all"
-say "  leave     they keep billing by the hour"
+say "  leave     they keep billing by the hour (until the ${MAX_HOURS}h safety stop)"
 say ""
 ask TEARDOWN "stop / terminate / leave [stop]:"
 [[ -n "$TEARDOWN" ]] || TEARDOWN="stop"
@@ -592,7 +678,7 @@ case "$TEARDOWN" in
   terminate)
     if confirm "Terminate both instances? The stack and its data are gone for good."; then
       awsx ec2 terminate-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null
-      say "terminating. The key pair and security group remain for next time."
+      say "terminating. The key pair remains for next time."
       # Nothing to reuse, so drop the ids rather than offer them on a re-run.
       write_env TARGET_ID ""
       write_env GEN_ID ""
@@ -602,7 +688,7 @@ case "$TEARDOWN" in
     ;;
   leave)
     warn "left running — they are still billing"
-    note "  aws ec2 stop-instances --instance-ids $TARGET_ID $GEN_ID --region $AWS_REGION"
+    note "  aws ec2 stop-instances --instance-ids $TARGET_ID $GEN_ID --region $AWS_REGION --profile $AWS_PROFILE"
     ;;
   *)
     awsx ec2 stop-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null
