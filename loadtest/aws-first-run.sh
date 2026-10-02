@@ -556,9 +556,51 @@ K6_ENV="SUITE=load \
 ODB_GRAPHQL_URL=https://odb.gpp-test.internal/odb \
 SSO_URL=https://sso.gpp-test.internal"
 
-ssh_to "$GEN_ID" "cd ~/gpp-tests && $K6_ENV \
+# Asked once, here, so the smoke, regression and load runs all stream. The credentials are
+# proven from the generator with tools/verify-metrics.sh before anything relies on them:
+# k6 only *logs* a rejected push and still exits 0, which is how the 2026-10-02 load run
+# streamed 40 minutes of 401s to nowhere.
+GRAFANA_ARGS=""
+GRAFANA_ENV=""
+if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" && -n "${K6_PROMETHEUS_RW_USERNAME:-}" \
+      && -n "${K6_PROMETHEUS_RW_PASSWORD:-}" ]]; then
+  # Set in the repo's gitignored .env (direnv loads it), so nothing is asked.
+  say "using the Grafana remote-write credentials from your environment"
+  GC_PROM_RW_URL="$K6_PROMETHEUS_RW_SERVER_URL"
+  GC_PROM_INSTANCE_ID="$K6_PROMETHEUS_RW_USERNAME"
+  GC_PROM_TOKEN="$K6_PROMETHEUS_RW_PASSWORD"
+  STREAM=1
+elif confirm "Stream metrics to Grafana Cloud?"; then
+  note "  URL from grafana.com → stack → Prometheus → Details, ending in /api/prom/push;"
+  note "  username = the numeric Instance ID; token = an Access Policy token (glc_…)"
+  note "  with metrics:write — a glsa_ service-account token always gets a 401."
+  note "  Put all three in the repo's .env as K6_PROMETHEUS_RW_* to skip these prompts."
+  ask       GC_PROM_RW_URL      "Prometheus remote-write URL:"
+  ask       GC_PROM_INSTANCE_ID "Instance ID (username):"
+  ask_secret GC_PROM_TOKEN      "Access policy token:"
+  write_env GC_PROM_RW_URL "$GC_PROM_RW_URL"
+  write_env GC_PROM_INSTANCE_ID "$GC_PROM_INSTANCE_ID"
+  STREAM=1
+fi
+if [[ -n "${STREAM:-}" ]]; then
+  GRAFANA_ENV="K6_PROMETHEUS_RW_SERVER_URL='$GC_PROM_RW_URL' \
+K6_PROMETHEUS_RW_USERNAME='$GC_PROM_INSTANCE_ID' \
+K6_PROMETHEUS_RW_PASSWORD='$GC_PROM_TOKEN' \
+K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
+  say "checking the credentials with a five-second push"
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && $GRAFANA_ENV tools/verify-metrics.sh"; then
+    GRAFANA_ARGS="-o experimental-prometheus-rw"
+    say "Grafana accepted the push — the runs below stream live"
+  else
+    warn "Grafana rejected the credentials (see above); the runs below will not stream"
+    GRAFANA_ENV=""
+    confirm "Carry on without Grafana?" || { say "Stopping here — nothing torn down."; exit 1; }
+  fi
+fi
+
+ssh_to "$GEN_ID" "cd ~/gpp-tests && $K6_ENV $GRAFANA_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
-  MIN_CHECK_RATE=0.95 k6 run k6/load.js" || {
+  MIN_CHECK_RATE=0.95 k6 run $GRAFANA_ARGS k6/load.js" || {
     warn "the smoke run failed — fix this before going further"
     note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
     note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $TARGET_ID"
@@ -578,7 +620,7 @@ printf '\n'
 # Output goes to a file first and is printed after: a `| tee` would report tee's exit code,
 # and the remote shell is dash, which has no pipefail.
 if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && set +a && \
-  SUITE=regression k6 run --summary-export out/k6-regression-summary.json k6/regression.js \
+  $GRAFANA_ENV SUITE=regression k6 run $GRAFANA_ARGS --summary-export out/k6-regression-summary.json k6/regression.js \
   > out/k6-regression.log 2>&1; rc=\$?; cat out/k6-regression.log; exit \$rc"; then
   say ""
   say "regression green on AWS"
@@ -605,26 +647,12 @@ if confirm "Run the 40-minute load profile now?"; then
       || warn "could not re-arm the safety stop on $id — watch its uptime"
   done
 
-  GRAFANA_ARGS=""
-  if confirm "Stream metrics to Grafana Cloud live?"; then
-    ask       GC_PROM_RW_URL      "Prometheus remote-write URL:"
-    ask       GC_PROM_INSTANCE_ID "Instance ID (username):"
-    ask_secret GC_PROM_TOKEN      "Access policy token:"
-    write_env GC_PROM_RW_URL "$GC_PROM_RW_URL"
-    write_env GC_PROM_INSTANCE_ID "$GC_PROM_INSTANCE_ID"
-    GRAFANA_ARGS="-o experimental-prometheus-rw"
-    K6_ENV="$K6_ENV \
-K6_PROMETHEUS_RW_SERVER_URL='$GC_PROM_RW_URL' \
-K6_PROMETHEUS_RW_USERNAME='$GC_PROM_INSTANCE_ID' \
-K6_PROMETHEUS_RW_PASSWORD='$GC_PROM_TOKEN' \
-K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
-  fi
-
+  # Grafana was settled (and verified) at the smoke stage.
   # Detached, so a dropped SSM session or a sleeping laptop cannot lose the run. stdin must
   # come from /dev/null too: a background job still holding the session's stdin keeps ssh
   # open until k6 exits, which froze the wizard here for the whole 40 minutes (2026-10-02).
   ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
-    nohup env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    nohup env $K6_ENV $GRAFANA_ENV OTEL_ENVIRONMENT=aws-loadtest \
     k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
     < /dev/null > out/k6-run.log 2>&1 & sleep 5" || true
   say "running detached on the generator; following the log."
