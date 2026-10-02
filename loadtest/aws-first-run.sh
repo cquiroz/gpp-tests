@@ -632,7 +632,10 @@ K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
   note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
   note "    then: tail -f ~ubuntu/gpp-tests/out/k6-run.log"
   printf '\n'
-  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -f 'k6 run' | head -1) gpp-tests/out/k6-run.log" || true
+  # `pgrep -x k6` matches the k6 binary only. The earlier `pgrep -f 'k6 run'` also matched
+  # this very shell (its command line contains the pattern), so tail waited on itself and
+  # never returned after the run ended (2026-10-02).
+  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -x k6 | head -1) gpp-tests/out/k6-run.log" || true
   RAN_LOAD=1
   pause "Run finished — press Enter to collect the results"
 else
