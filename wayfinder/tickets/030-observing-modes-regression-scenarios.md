@@ -102,3 +102,9 @@ The rest of the e2e suite also passes: 14 passed, 3 skipped (the parked scenario
 attempt failed in a cascade when a Postgres backend was OOM-killed on the 8 GiB Docker VM, which
 killed the odb/SSO pools. Restarting those services cleared it — the same local limit the stack
 notes describe, not a test fault.
+
+**k6 half verified (2026-10-02)**, on the AWS target (ticket 016) as the fabricated PI. All 14
+`observing mode …` checks are green. Overall: 73/73 checks, `odb_graphql_errors` 0,
+`gpp_scenario_pass` 7/7, 21.6 s for the whole regression run. This was the first time
+`loginAsStandardUser` and `observingModesScenario` ran — until now they had only been
+`k6 inspect`ed.

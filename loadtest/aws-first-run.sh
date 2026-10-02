@@ -596,6 +596,15 @@ printf '\n'
 
 RAN_LOAD=""
 if confirm "Run the 40-minute load profile now?"; then
+  # The first-boot safety stop (stage 3) counts from launch, not from this stage. On
+  # 2026-10-02 a 3-hour stop was minutes from firing 17 minutes into the profile — so push it
+  # out to 90 minutes from now on both instances (load profile + collect + teardown).
+  say "re-arming the safety stop on both instances: 90 minutes from now"
+  for id in "$TARGET_ID" "$GEN_ID"; do
+    ssh_to "$id" "sudo shutdown -c 2>/dev/null; sudo shutdown -P +90" >/dev/null 2>&1 \
+      || warn "could not re-arm the safety stop on $id — watch its uptime"
+  done
+
   GRAFANA_ARGS=""
   if confirm "Stream metrics to Grafana Cloud live?"; then
     ask       GC_PROM_RW_URL      "Prometheus remote-write URL:"
@@ -611,11 +620,13 @@ K6_PROMETHEUS_RW_PASSWORD='$GC_PROM_TOKEN' \
 K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
   fi
 
-  # Detached, so a dropped SSM session or a sleeping laptop cannot lose the run.
+  # Detached, so a dropped SSM session or a sleeping laptop cannot lose the run. stdin must
+  # come from /dev/null too: a background job still holding the session's stdin keeps ssh
+  # open until k6 exits, which froze the wizard here for the whole 40 minutes (2026-10-02).
   ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
     nohup env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
     k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
-    > out/k6-run.log 2>&1 & sleep 5" || true
+    < /dev/null > out/k6-run.log 2>&1 & sleep 5" || true
   say "running detached on the generator; following the log."
   note "Ctrl-C stops the tail, not the run. Re-attach with:"
   note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"

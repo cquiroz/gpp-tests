@@ -64,3 +64,31 @@ Docker Hub were reachable through the NAT. The template's root disk is only 6.8 
 its own account, OIDC and public IPs. A workflow-driven version needs either a GitHub OIDC role
 granted by IT under the same procedure, or a self-hosted runner inside `nl-vpc`. Ask IT which
 they allow.
+
+**First run under the procedure: green (2026-10-02).** `m7i.4xlarge` target and `c7i.2xlarge`
+generator, both launched through the template at 19:40 UTC.
+
+Smoke (10 VUs, 1m40s): 224 iterations, 861/861 checks.
+
+Regression with the observing modes: 73/73 checks, 0 GraphQL errors, 21.6 s.
+
+Full profile (0→50→200 VUs, 40 min), against the August us-east-1 run on the same types:
+
+| | 2026-10-02 us-west-2 | 2026-08-26 us-east-1 |
+|---|---|---|
+| iterations | 111,763 (46.5/s), 0 interrupted | 111,333 (46.3/s) |
+| http p50 / p95 / max | 30 / 168 / 730 ms | 31 / 189 / 1,238 ms |
+| odb read p50 / p95 / max | 25 / 90 / 381 ms | 25 / 105 / 614 ms |
+| odb write p50 / p95 / max | 80 / 284 / 730 ms | 102 / 318 / 650 ms |
+| http failed / checks | 0% / 100% (345,847) | 0% / 100% |
+
+The NOIRLab account carries the 200-VU model as comfortably as the separate one did, so it is
+usable for the surge work. Lessons, both fixed in the wizard:
+- The ssh that started k6 detached held the session's stdin, which froze the wizard for the
+  whole run. Fixed with `< /dev/null`.
+- The first-boot safety stop (3 h, counted from launch) was minutes from firing 17 minutes into
+  the profile. It was cancelled over SSM by hand. The wizard now re-arms it 90 minutes ahead
+  just before the profile starts.
+
+Grafana remote-write answered 401 for the whole run, so the credentials entered were wrong.
+Nothing reached Grafana; the local summary is the record.
