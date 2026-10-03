@@ -28,6 +28,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
 | `.github/` | `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
+| `ARCHITECTURE.md` | The high-level picture: suites, hosts, how they interact and where each runs, with diagrams. Start here. |
 | `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. Includes the [AWS load-target design note](research/aws-load-target-options.md). |
 
 ## Prerequisites
@@ -125,6 +126,8 @@ OBSERVE_INSTANCES=2 STEP_SECONDS_MIN=5 STEP_SECONDS_MAX=10 DURATION=3m npm run k
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).
 
 ## Where decisions live
+
+For the picture of how it all fits together, read [`ARCHITECTURE.md`](ARCHITECTURE.md) first.
 
 | Question | Read |
 |---|---|
