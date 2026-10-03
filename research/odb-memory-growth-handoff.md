@@ -1,8 +1,41 @@
 # Handoff: the odb's memory grows under execution traffic (local stack)
 
-**Written:** 2026-10-03, from the session that built ticket 021. **Status:** open question,
-nothing concluded. **Purpose:** everything needed to pick this up and explore it, without
-re-reading that session.
+**Written:** 2026-10-03, from the session that built ticket 021. **Status: resolved the same
+day — JVM sizing, not a leak** (see "Resolution" below; the sections after it are the trail).
+
+## Resolution (2026-10-03, evening)
+
+The odb image's launcher (`/opt/docker/bin/lucuma-odb-service`, lines 360–435) sizes the heap
+from the container's cgroup limit and pins it: `-XX:MaxRAM=<limit> -Xms<heap> -Xmx<heap>` with
+`heap = limit − min(1024 MB, 26 % of limit + 80 MB)`. Read from the running container:
+
+| Container limit | Heap (-Xms = -Xmx) | Left for everything else |
+|---|---|---|
+| 2 GiB (local default) | 1,436 MB | ~610 MB |
+| 25.6 GiB (AWS, 40 % of 64 GiB) | ~24.6 GiB | 1 GiB |
+
+A JDK sidecar attached to the local odb (`jcmd 1 GC.heap_info`) confirmed it: G1, heap
+reserved = committed = 1,470 MB with 107 MB in use. Resident memory is the heap pages the JVM
+has touched so far plus ~250 MB native, and with the heap committed at its maximum from the
+start nothing is ever given back, so RSS only climbs — in steps, as eden moves into untouched
+regions — until the whole heap has been walked. That is the staircase, idle or not; execution
+traffic only walks it faster (4.6 → 15.5 GiB in 20 minutes on AWS, in two surges with a
+plateau while young collections reused touched regions).
+
+Consequences:
+
+- **Not an odb leak.** No ask to the odb team about memory growth.
+- **Local OOM kills were real but a sizing artefact:** 1,436 MB heap + metaspace + threads +
+  the metrics agent + emulation overhead > 2 GiB. Fix: `ODB_JAVA_OPTS='-Xms768m -Xmx768m'`
+  (the launcher honours an explicit `-Xmx` in `JAVA_OPTS`), or a bigger `ODB_MEM_LIMIT`.
+- **On the load target the risk is inverted:** a 24.6 GiB heap leaves native memory 1 GiB;
+  a 75-minute surge run would walk the heap to its maximum and then live on that margin. The
+  wizard now caps the heap at 60 % of the odb's container (`ODB_JAVA_OPTS`, stage 4).
+- **Worth telling the odb team, as information rather than a bug:** the launcher's formula
+  (a port of Heroku's dyno heuristics) caps "system RAM" at 1 GiB, which fits dynos and not a
+  25 GiB container. Production's dynos are small, so nothing is wrong there today.
+
+The sections below are the investigation as it was handed off, kept for the record.
 
 ## What was seen
 
@@ -40,6 +73,31 @@ The traffic that produced it, per Observe instance per step (3–5 s): 6 step ev
 `futureLimit: 100` selecting the full step fields of both sequences. Two instances, so about
 7 requests/s overall. For comparison, the August 200-VU guest profile on AWS (reads and
 writes of programs and observations, no execution) did not kill an odb with 25 GiB.
+
+## Seen on AWS too, idle (2026-10-03, native amd64)
+
+The first AUTO run of the wizard sampled the odb on the `m7i.4xlarge` target every 30 s
+(`out/odb-stats-aws-20261003T144017Z.log`). The execution stage itself failed to start (a
+quoting error, fixed), so the odb saw only the smoke run and the regression suite at the
+start, then nothing. Its resident memory still climbed, in steps:
+
+```
+14:15:59  4.674 GiB   (limit 25.6 GiB; just after the regression suite)
+14:18:07  4.835       14:24:32  4.975       14:28:49  5.116
+14:33:05  5.256       14:39:30  5.397 GiB   (+0.72 GiB in 24 idle minutes)
+```
+
+Reproduced in the second AUTO run the same day: the sampler ran 18:40–19:04 UTC and the odb
+went 4.637 → 5.339 GiB, the same 140 MB steps at the same six-minute spacing, with Postgres
+(413 MiB), ITC (3.57 GiB) and obscalc (3.06 GiB) flat throughout. That window was idle too:
+the sampler's ssh session held the wizard, so k6 started only when the sampler ended (fixed
+with `setsid -f`), and the execution run itself (318 steps, 19:04–19:24) has no samples.
+
+About 140 MB every six minutes, flat in between, at under 1 % CPU. That is not emulation
+and not execution traffic. The staircase with nothing running points first at hypothesis 1
+(the JVM expanding its heap toward a large maximum before collecting) and at whatever the
+odb does on a timer; it does not distinguish a leak from lazy heap growth. `GC.heap_info`
+before and after a forced GC on the AWS odb is the one measurement that would.
 
 ## What is not known
 

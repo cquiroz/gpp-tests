@@ -171,6 +171,13 @@ services:
     environment:
       <<: *odb-env
       PORT: "8082"
+      # The image's launcher sizes the heap from the container limit: limit minus at most
+      # 1 GiB, with -Xms equal to -Xmx. On a 2 GiB container that leaves ~600 MB for metaspace,
+      # threads and the agent (tight under amd64 emulation: OOM-killed on a Mac, 2026-10-03);
+      # on a 25 GiB load target it leaves the same 1 GiB, and the JVM walks the whole heap, so
+      # resident memory climbs to the limit by design. An explicit -Xms/-Xmx here is honoured
+      # by the launcher instead of its formula (research/odb-memory-growth-handoff.md).
+      JAVA_OPTS: ${ODB_JAVA_OPTS:-}
     expose:
       - "8082"
     # The ODB runs its ~900 Flyway migrations *before* binding the port, so "the port is

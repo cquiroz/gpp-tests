@@ -567,11 +567,16 @@ rsync_to "$TARGET_ID"
 TARGET_MIB="$(awsx ec2 describe-instance-types --instance-types "$TARGET_TYPE" \
   --query 'InstanceTypes[0].MemoryInfo.SizeInMiB' --output text)"
 pct() { printf '%sm' "$(( TARGET_MIB * $1 / 100 ))"; }
-LIMITS="ODB_MEM_LIMIT=$(pct 40) ITC_MEM_LIMIT=$(pct 10) OBSCALC_MEM_LIMIT=$(pct 8) \
+# The odb's heap: 24 % of the box, 60 % of its container. Left to the image's launcher the heap
+# would be the container minus 1 GiB with -Xms = -Xmx, and resident memory would climb to the
+# limit over a long run as the JVM touches it all (2026-10-03: 4.6 → 15.5 GiB in 20 minutes),
+# leaving native memory 1 GiB to live in. See research/odb-memory-growth-handoff.md.
+ODB_HEAP_MIB=$(( TARGET_MIB * 24 / 100 ))
+LIMITS="ODB_MEM_LIMIT=$(pct 40) ODB_JAVA_OPTS='-Xms${ODB_HEAP_MIB}m -Xmx${ODB_HEAP_MIB}m' ITC_MEM_LIMIT=$(pct 10) OBSCALC_MEM_LIMIT=$(pct 8) \
 CADDY_MEM_LIMIT=$(pct 8) PG_MEM_LIMIT=$(pct 6) SSO_MEM_LIMIT=$(pct 4) \
 HASURA_MEM_LIMIT=$(pct 2) PG_MAX_CONNECTIONS=400"
 say "memory limits for ${TARGET_MIB}MiB:"
-say "  odb $(pct 40)  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
+say "  odb $(pct 40) (heap ${ODB_HEAP_MIB}m)  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
 note "  Caps rather than reservations. Override any of them in the environment; a target that"
 note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
 
@@ -645,7 +650,6 @@ SSO_URL=https://sso.gpp-test.internal"
 # k6 only *logs* a rejected push and still exits 0, which is how the 2026-10-02 load run
 # streamed 40 minutes of 401s to nowhere.
 GRAFANA_ARGS=""
-GRAFANA_ENV=""
 if [[ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" && -n "${K6_PROMETHEUS_RW_USERNAME:-}" \
       && -n "${K6_PROMETHEUS_RW_PASSWORD:-}" ]]; then
   # Set in the repo's gitignored .env (direnv loads it), so nothing is asked.
@@ -666,23 +670,29 @@ elif confirm "Stream metrics to Grafana Cloud?"; then
   write_env GC_PROM_INSTANCE_ID "$GC_PROM_INSTANCE_ID"
   STREAM=1
 fi
+# The credentials live in a file on the generator that every k6 command sources, and travel
+# there on ssh's stdin: never on a command line, where `ps` shows them and where a quoting
+# error makes bash echo them back in clear (which is how the 2026-10-03 run printed the
+# token). The file always exists, empty when not streaming, so the commands never branch.
+grafana_file() {
+  ssh_to "$GEN_ID" "umask 077 && mkdir -p ~/gpp-tests/out && cat > ~/gpp-tests/out/grafana.env"
+}
+: | grafana_file
 if [[ -n "${STREAM:-}" ]]; then
-  GRAFANA_ENV="K6_PROMETHEUS_RW_SERVER_URL='$GC_PROM_RW_URL' \
-K6_PROMETHEUS_RW_USERNAME='$GC_PROM_INSTANCE_ID' \
-K6_PROMETHEUS_RW_PASSWORD='$GC_PROM_TOKEN' \
-K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
+  printf 'export K6_PROMETHEUS_RW_SERVER_URL=%q\nexport K6_PROMETHEUS_RW_USERNAME=%q\nexport K6_PROMETHEUS_RW_PASSWORD=%q\nexport K6_PROMETHEUS_RW_TREND_STATS=%q\n' \
+    "$GC_PROM_RW_URL" "$GC_PROM_INSTANCE_ID" "$GC_PROM_TOKEN" "avg,p(95),p(99)" | grafana_file
   say "checking the credentials with a five-second push"
-  if ssh_to "$GEN_ID" "cd ~/gpp-tests && $GRAFANA_ENV tools/verify-metrics.sh"; then
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && . out/grafana.env && tools/verify-metrics.sh"; then
     GRAFANA_ARGS="-o experimental-prometheus-rw"
     say "Grafana accepted the push — the runs below stream live"
   else
     warn "Grafana rejected the credentials (see above); the runs below will not stream"
-    GRAFANA_ENV=""
+    : | grafana_file
     confirm "Carry on without Grafana?" CONTINUE_WITHOUT_GRAFANA y || { say "Stopping here — nothing torn down."; exit 1; }
   fi
 fi
 
-ssh_to "$GEN_ID" "cd ~/gpp-tests && $K6_ENV $GRAFANA_ENV \
+ssh_to "$GEN_ID" "cd ~/gpp-tests && . out/grafana.env && $K6_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
   MIN_CHECK_RATE=0.95 k6 run $GRAFANA_ARGS k6/load.js" || {
     warn "the smoke run failed — fix this before going further"
@@ -709,8 +719,8 @@ say "the service JWT is on the generator"
 
 # Output goes to a file first and is printed after: a `| tee` would report tee's exit code,
 # and the remote shell is dash, which has no pipefail.
-if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && . stack/.env.service && set +a && \
-  $GRAFANA_ENV SUITE=regression k6 run $GRAFANA_ARGS --summary-export out/k6-regression-summary.json k6/regression.js \
+if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && . stack/.env.service && set +a && . out/grafana.env && \
+  SUITE=regression k6 run $GRAFANA_ARGS --summary-export out/k6-regression-summary.json k6/regression.js \
   > out/k6-regression.log 2>&1; rc=\$?; cat out/k6-regression.log; exit \$rc"; then
   say ""
   say "regression green on AWS"
@@ -741,26 +751,38 @@ if confirm "Run the execution profile now ($EXEC_INSTANCES instances, $EXEC_MINU
   done
 
   # Container memory and CPU every 30 s for the run's length plus a margin, detached on the
-  # target, ending by itself. One line per sample: time, then name/mem/cpu per container.
-  ssh_to "$TARGET_ID" "mkdir -p ~/gpp-tests/out && nohup timeout $((EXEC_MINUTES * 60 + 240)) sh -c \
-    'while true; do echo \"\$(date -u +%FT%TZ) \$(sudo docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\" | tr \"\\n\" \";\")\"; sleep 30; done' \
-    < /dev/null > ~/gpp-tests/out/odb-stats.log 2>&1 & sleep 1" || warn "could not start the memory sampler on the target"
-  say "sampling container memory on the target every 30 s"
+  # target, ending by its own clock. One line per sample: time, then name/mem/cpu per
+  # container. `setsid -f` puts it in its own session: the first version (`nohup … &` under
+  # `timeout`) kept the ssh session open until the sampler's timeout fired, so k6 started 24
+  # minutes late and the samples covered the idle wait instead of the run (2026-10-03).
+  SAMPLE_UNTIL="\$(( \$(date +%s) + $((EXEC_MINUTES * 60 + 240)) ))"
+  ssh_to "$TARGET_ID" "mkdir -p ~/gpp-tests/out && setsid -f sh -c \
+    'end=$SAMPLE_UNTIL; while [ \$(date +%s) -lt \$end ]; do echo \"\$(date -u +%FT%TZ) \$(sudo docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\" | tr \"\\n\" \";\")\"; sleep 30; done' \
+    < /dev/null > ~/gpp-tests/out/odb-stats.log 2>&1; sleep 1" \
+    || warn "could not start the memory sampler on the target"
+  say "sampling container memory on the target every 30 s (started $(date -u +%H:%M:%SZ))"
 
   # Detached like the load profile; the service JWT is read on the generator from the file
   # streamed in stage 7, never passed on a command line.
-  ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
-    nohup sh -c 'set -a; . stack/.env.service; set +a; exec env $K6_ENV $GRAFANA_ENV OTEL_ENVIRONMENT=aws-loadtest \
+  # The ssh exit status is pgrep's: k6 must be alive five seconds in, or the start failed
+  # (the 2026-10-03 run lost its stage to a quoting error that `|| true` swallowed).
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup sh -c '. stack/.env.service; . out/grafana.env; exec env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
     OBSERVE_INSTANCES=$EXEC_INSTANCES STEP_SECONDS_MIN=${STEP_SECONDS_MIN:-5} STEP_SECONDS_MAX=${STEP_SECONDS_MAX:-10} \
     DURATION=${EXEC_MINUTES}m EXECUTION_OBSERVATIONS=${EXECUTION_OBSERVATIONS:-4} \
-    k6 run $GRAFANA_ARGS --summary-export out/k6-execution-summary.json k6/execution.js' \
-    < /dev/null > out/k6-execution.log 2>&1 & sleep 5" || true
-  say "running detached on the generator; following the log."
-  note "Ctrl-C stops the tail, not the run. Re-attach with:"
-  note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
-  note "    then: tail -f ~ubuntu/gpp-tests/out/k6-execution.log"
-  printf '\n'
-  follow_k6 "$GEN_ID" gpp-tests/out/k6-execution.log
+    k6 run $GRAFANA_ARGS --summary-trend-stats avg,min,med,max,p\(90\),p\(95\),p\(99\) \
+    --summary-export out/k6-execution-summary.json k6/execution.js' \
+    < /dev/null > out/k6-execution.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
+    say "running detached on the generator since $(date -u +%H:%M:%SZ); following the log."
+    note "Ctrl-C stops the tail, not the run. Re-attach with:"
+    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "    then: tail -f ~ubuntu/gpp-tests/out/k6-execution.log"
+    printf '\n'
+    follow_k6 "$GEN_ID" gpp-tests/out/k6-execution.log
+  else
+    warn "k6 did not start on the generator — the end of its log:"
+    ssh_to "$GEN_ID" "tail -n 20 gpp-tests/out/k6-execution.log" || true
+  fi
   RAN_EXEC=1
   pause "Run finished — press Enter to continue"
 else
@@ -788,19 +810,23 @@ if confirm "Run the 40-minute load profile now?" RUN_LOAD n; then
   # Detached, so a dropped SSM session or a sleeping laptop cannot lose the run. stdin must
   # come from /dev/null too: a background job still holding the session's stdin keeps ssh
   # open until k6 exits, which froze the wizard here for the whole 40 minutes (2026-10-02).
-  ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
-    nohup env $K6_ENV $GRAFANA_ENV OTEL_ENVIRONMENT=aws-loadtest \
-    k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js \
-    < /dev/null > out/k6-run.log 2>&1 & sleep 5" || true
-  say "running detached on the generator; following the log."
-  note "Ctrl-C stops the tail, not the run. Re-attach with:"
-  note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
-  note "    then: tail -f ~ubuntu/gpp-tests/out/k6-run.log"
-  printf '\n'
-  # `pgrep -x k6` matches the k6 binary only. The earlier `pgrep -f 'k6 run'` also matched
-  # this very shell (its command line contains the pattern), so tail waited on itself and
-  # never returned after the run ended (2026-10-02).
-  follow_k6 "$GEN_ID" gpp-tests/out/k6-run.log
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup sh -c '. out/grafana.env; exec env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    k6 run $GRAFANA_ARGS --summary-export out/k6-summary.json k6/load.js' \
+    < /dev/null > out/k6-run.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
+    say "running detached on the generator; following the log."
+    note "Ctrl-C stops the tail, not the run. Re-attach with:"
+    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "    then: tail -f ~ubuntu/gpp-tests/out/k6-run.log"
+    printf '\n'
+    # `pgrep -x k6` matches the k6 binary only. The earlier `pgrep -f 'k6 run'` also matched
+    # this very shell (its command line contains the pattern), so tail waited on itself and
+    # never returned after the run ended (2026-10-02).
+    follow_k6 "$GEN_ID" gpp-tests/out/k6-run.log
+  else
+    warn "k6 did not start on the generator — the end of its log:"
+    ssh_to "$GEN_ID" "tail -n 20 gpp-tests/out/k6-run.log" || true
+  fi
   RAN_LOAD=1
   pause "Run finished — press Enter to collect the results"
 else
@@ -822,7 +848,7 @@ if [[ -n "$RAN_EXEC" ]]; then
     && say "saved out/odb-stats-aws-$STAMP.log" || warn "no memory samples to collect"
   printf '\n'
 
-  node --input-type=commonjs -e '
+  [[ -f "out/k6-aws-execution-$STAMP.json" ]] && node --input-type=commonjs -e '
   const fs = require("fs");
   const s = require("./out/k6-aws-execution-'"$STAMP"'.json");
   const m = s.metrics ?? {};
@@ -846,12 +872,12 @@ if [[ -n "$RAN_EXEC" ]]; then
 fi
 
 if [[ -n "$RAN_LOAD" ]]; then
-  scp_from "$GEN_ID" "gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json" 2>/dev/null \
+    && say "saved out/k6-aws-$STAMP.json" || warn "no load summary to collect"
   scp_from "$GEN_ID" "gpp-tests/out/k6-run.log" "out/k6-aws-$STAMP.log" 2>/dev/null || true
-  say "saved out/k6-aws-$STAMP.json"
   printf '\n'
 
-  node --input-type=commonjs -e '
+  [[ -f "out/k6-aws-$STAMP.json" ]] && node --input-type=commonjs -e '
   const s = require("./out/k6-aws-'"$STAMP"'.json");
   const m = s.metrics ?? {};
   const p95 = (k) => m[k]?.["p(95)"]?.toFixed(1) ?? "—";

@@ -204,5 +204,9 @@ both live only as long as the stack does.
   revision. The devShell redirects it to `.playwright/`; run `npx playwright install chromium`.
   Set `GPP_TESTS_KEEP_BROWSERS_PATH=1` to keep your own path instead, and `GPP_TESTS_QUIET=1`
   to silence the shell banner.
+- **The odb container is OOM-killed (exit 137) under load.** Its launcher pins a heap of the
+  container limit minus ~600 MB, which under amd64 emulation on a Mac is too little room for
+  everything else. Boot with `ODB_JAVA_OPTS='-Xms768m -Xmx768m'` (or a larger `ODB_MEM_LIMIT`);
+  the reasoning is in `research/odb-memory-growth-handoff.md`.
 - **A metric label was rejected.** That is `lib/tags.js` doing its job; add the dimension to
   the annotation instead, or take the series budget hit knowingly.

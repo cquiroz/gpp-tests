@@ -88,8 +88,24 @@ sequence 3 atoms of GCAL 120 s + GCAL 16 s + SCIENCE 930 s. Recording a step's e
   the execution-config read goes over HTTP until [ticket 022](022-graphql-ws-client-and-subscriber-vus.md)
   supplies the websocket client (same wait measured, transport swapped there); Observe's
   `resetAcquisition` at load is not sent (the seed is fresh).
+- **First native run (AWS, 2026-10-03 19:04–19:24 UTC, `m7i.4xlarge` target, `c7i.2xlarge`
+  generator, 2 instances at 5–10 s per step, re-seeding 4 observations each time they ran
+  out):** 318 steps, 4,957 requests, 0 failures, 100 % checks, 0 GraphQL errors. Step ODB
+  overhead avg 175 ms, med 137, p95 567, p99 613, max 731 ms. By blocking point (p95):
+  RecordVisit 282 ms, ExecutionConfig 200 ms, Flush 59 ms, RecordDataset 28 ms, StepRecorded
+  0 ms (the first step event is always acknowledged before the dataset is needed). Per-mutation
+  p95 52 ms, ExecutionConfig read p95 199 ms. Against the provisional budget (p95 < 2 s,
+  p99 < 5 s) this is a third of the way at a cadence ten times Observe's real one, with no
+  other traffic; the surge run is where the budget gets tested.
 - **Watch item, carried to the map:** the odb's resident memory climbed steadily from
   1.2 GiB to its 2 GiB limit over ~3 minutes of this traffic (2 instances, 3–5 s steps) and was
-  OOM-killed, twice. Local emulation inflates memory, and the AWS target gives the odb 40 % of
-  64 GiB, so the first AWS execution run must sample the odb's memory over its length. If it
-  climbs there too, that is a finding for the odb team before any surge run.
+  OOM-killed, twice. On the AWS target (odb limit 25.6 GiB) the growth is there too, and it
+  is **not execution traffic**: two idle windows of ~24 minutes each (14:16–14:39 and
+  18:40–19:04 UTC, nothing but the smoke and regression runs before them) each added about
+  0.7 GiB in 140 MB steps every six minutes at under 1 % CPU, while Postgres, ITC and obscalc
+  stayed flat. The third run sampled the execution itself: 4.6 → 15.5 GiB in 20 minutes. **Resolved
+  the same evening: not a leak.** The image's launcher pins the heap at the container limit minus
+  at most 1 GiB with `-Xms = -Xmx`, so resident memory climbs until the JVM has touched the whole
+  heap (24.6 GiB on the AWS odb). The wizard now caps the heap at 60 % of the odb's container;
+  locally `ODB_JAVA_OPTS` avoids the 2 GiB OOM kills. `research/odb-memory-growth-handoff.md`
+  has the measurements and the formula.

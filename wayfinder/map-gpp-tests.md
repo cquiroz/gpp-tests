@@ -141,10 +141,11 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
   depends on the span-attribute ask (019) landing upstream first.
 - **Observe stall budget confirmation** — take the first surge run's numbers to the
   Observe developers and replace the provisional figures.
-- **odb memory under execution traffic** — locally (amd64 emulation, 2 GiB limit) the odb's
-  resident memory climbed from 1.2 GiB to the limit in ~3 minutes of two Observe instances at
-  3–5 s per step and was OOM-killed (ticket 021). Sample the odb's memory across the first
-  AWS execution run; a climb there is an odb finding that precedes any surge run.
+- **odb memory growth — resolved 2026-10-03, not a leak.** The image's launcher pins the heap at
+  the container limit minus at most 1 GiB (`-Xms = -Xmx`), so resident memory climbs until the
+  whole heap has been touched; the wizard now caps the load target's odb heap at 60 % of its
+  container, and `ODB_JAVA_OPTS` does the same locally. Details and the formula in
+  `research/odb-memory-growth-handoff.md` (ticket 021).
 - **Dev-process integration in gpp-tests** — the per-merge Explore lane, Slack alerts,
   and promote gate decided in [ticket 010](tickets/010-decide-dev-process-integration.md)
   still need to be built, after the stress work.

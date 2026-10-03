@@ -103,6 +103,18 @@ the run is logged to `out/aws-run-<stamp>.log`, and any non-zero exit stops the 
 runs the execution profile and samples the odb's memory on the target. This is the body of
 the eventual workflow job: once IT grants an identity, the workflow calls the same script.
 
+**First unattended run (2026-10-03, 18:35–19:25 UTC):** `AUTO=1 RUN_EXECUTION=1 RUN_LOAD=0
+TEARDOWN=stop`, no keyboard, pair stopped at the end. Regression green (92/92), execution
+profile 318 steps with 0 errors (numbers in ticket 021), Grafana streaming. Two bugs found
+and fixed: credentials on a command line were echoed by a quoting error (now a file on the
+generator, written over stdin), and the memory sampler held the ssh session for its whole
+lifetime, delaying k6 by 24 minutes (now `setsid -f`).
+
+**Third run (2026-10-03, 21:40–22:00 UTC):** the sampler now covers the run. 313 steps, 0
+errors, overhead p95 606 ms / p99 648 ms; odb resident memory 4.6 → 15.5 GiB, explained by the
+image's heap sizing (ticket 021, `research/odb-memory-growth-handoff.md`). Stage 4 now passes
+`ODB_JAVA_OPTS` capping the odb heap at 60 % of its container.
+
 **Where this leaves the ticket (2026-10-02):** the manual path is proven under the procedure, so
 the surge work (021, 022) proceeds locally and boots AWS through the wizard when it needs real
 numbers. The automation half waits on IT: a GitHub OIDC role for the repository scoped by the
