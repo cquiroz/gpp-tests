@@ -298,6 +298,24 @@ owned_or_die() {
   done
 }
 
+# follow_k6 ID LOG — follow a detached k6 run on the generator until the k6 process is gone.
+# The tail runs over SSM, and a laptop that sleeps drops that session: the first version
+# took the dropped tail for "run finished" and went on to collect and stop the pair while k6
+# was still running. So the tail is only the live view; the end of the run is decided by
+# polling for the process over fresh sessions, each retried until the laptop is back.
+follow_k6() {
+  local id="$1" log="$2" alive
+  ssh_to "$id" "tail -f --pid=\$(pgrep -x k6 | head -1) $log" || true
+  while :; do
+    alive="$(ssh_to "$id" "pgrep -x k6 | head -1" 2>/dev/null)" && [[ -z "$alive" ]] && break
+    [[ -n "$alive" ]] && note "k6 still running on $id (pid $alive); checking again in 30 s" \
+      || note "cannot reach $id right now; retrying in 30 s"
+    sleep 30
+  done
+  # The tail may have missed the end of the log while the session was down.
+  ssh_to "$id" "tail -n 40 $log" 2>/dev/null || true
+}
+
 # wait_for_ssm ID — the agent registers ~20s after the instance runs; ssh needs it Online.
 wait_for_ssm() {
   local id="$1" status=""
@@ -742,7 +760,7 @@ if confirm "Run the execution profile now ($EXEC_INSTANCES instances, $EXEC_MINU
   note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
   note "    then: tail -f ~ubuntu/gpp-tests/out/k6-execution.log"
   printf '\n'
-  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -x k6 | head -1) gpp-tests/out/k6-execution.log" || true
+  follow_k6 "$GEN_ID" gpp-tests/out/k6-execution.log
   RAN_EXEC=1
   pause "Run finished — press Enter to continue"
 else
@@ -782,7 +800,7 @@ if confirm "Run the 40-minute load profile now?" RUN_LOAD n; then
   # `pgrep -x k6` matches the k6 binary only. The earlier `pgrep -f 'k6 run'` also matched
   # this very shell (its command line contains the pattern), so tail waited on itself and
   # never returned after the run ended (2026-10-02).
-  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -x k6 | head -1) gpp-tests/out/k6-run.log" || true
+  follow_k6 "$GEN_ID" gpp-tests/out/k6-run.log
   RAN_LOAD=1
   pause "Run finished — press Enter to collect the results"
 else
