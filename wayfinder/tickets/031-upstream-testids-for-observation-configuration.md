@@ -2,7 +2,7 @@
 id: 031
 title: "Upstream: data-testids for Explore's observation configuration"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: carlos.quiroz
 blocked-by: []
 ---
@@ -49,3 +49,10 @@ the spectroscopy table. Nothing is pushed and no PR has been opened.
 **Rebased 2026-10-01** onto `9b28610bdd` (`71ee4e4bc8`). `next-transit` had wrapped both modes
 tables in `TagMod(...).unless(props.altairParams.isPending)`, so the rows stay hidden while Altair
 guide stars are searched. The row attributes went inside that wrapper; selectors are unchanged.
+
+## Resolution
+
+**Closed 2026-10-01 — merged as
+[lucuma-apps#1623](https://github.com/gemini-hlsw/lucuma-apps/pull/1623)** and deployed to
+Explore's dev hosting. It carries the ids in the table above, including the six visitor-editor
+inputs. `tests/support/selectors.ts` consumes them.

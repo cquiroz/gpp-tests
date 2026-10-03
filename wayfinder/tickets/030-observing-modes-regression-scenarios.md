@@ -2,7 +2,7 @@
 id: 030
 title: "Regression scenarios: an observation in every observing mode"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee:
 blocked-by: []
 ---
@@ -108,3 +108,12 @@ notes describe, not a test fault.
 `gpp_scenario_pass` 7/7, 21.6 s for the whole regression run. This was the first time
 `loginAsStandardUser` and `observingModesScenario` ran — until now they had only been
 `k6 inspect`ed.
+
+## Resolution
+
+**Closed 2026-10-02 — green in the nightly at both layers.** The
+[2 Oct regression run](https://github.com/cquiroz/gpp-tests/actions/runs/37015029337) on `cquiroz/gpp-tests` used Explore's dev hosting, which carried
+031's ids. It passed all 14 `observing mode: …` browser tests (11–34 s each; suite 28 passed,
+3 skipped) and all 14 k6 `observing mode …` checks. The ITC memory watch item did not come up on
+the CI runner. The k6 half also passed on the AWS target (ticket 016). Fixture table:
+`lib/observing-modes.js`. Expected failures: none. MOS stays deferred to 028.

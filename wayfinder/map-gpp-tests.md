@@ -100,10 +100,19 @@ Settled during charting (constraints for every ticket):
   subscribers**, in a realistic and a ceiling tier, judged by absolute surge SLOs.
   AWS for iteration with scripted boot; production-shaped Heroku later for the
   capacity claim; Alloy on the target feeding a (preferably paid) Grafana stack.
+- [Regression scenarios: an observation in every observing mode](tickets/030-observing-modes-regression-scenarios.md) —
+  14 modes (11 calculated, visitor, Keck and Subaru exchange) as the fabricated PI, at both
+  layers. k6 builds each mode from `lib/observing-modes.js`; the browser picks it in Explore and
+  takes Explore's defaults. Green in the nightly since 2026-10-02. MOS waits on 028.
+- [Upstream: data-testids for Explore's observation configuration](tickets/031-upstream-testids-for-observation-configuration.md) —
+  written here and merged as lucuma-apps#1623 (2026-10-01): mode picker, instrument filter,
+  mode-table rows, Accept, sequence time and steps, visitor editor.
 
 ## Frontier now
 
-Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation),
+Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
+manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
+OIDC role, or a runner inside `nl-vpc`),
 **021** (Observe execution VUs + seed), **022** (graphql-ws client + subscribers), **023**
 (surge SLOs + verdict), **024** (telemetry stack, HITL), **027** (read production sizing,
 HITL), **028** (object store + attachment uploads — now blocks 017). Order of build:
@@ -111,11 +120,6 @@ HITL), **028** (object store + attachment uploads — now blocks 017). Order of 
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
-
-Regression breadth, queued after 021 → 022: **030** (an observation in every observing
-mode, both layers, regular PI) and **031** (Explore config-tile testids, claimed —
-written by us as a lucuma-apps PR). 030's two halves merge together once 031 is on
-Explore's dev hosting.
 
 ## Not yet specified
 
