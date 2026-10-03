@@ -214,7 +214,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 
-TOTAL_STAGES=11
+TOTAL_STAGES=12
 
 # The compose stack on one EC2 instance, driven by k6 from a second one, by hand
 # (research/aws-load-target-options.md phase 2) — under NOIRLab's launch procedure for the
@@ -341,6 +341,7 @@ wait_for_ssm() {
 #   CONTINUE_WITHOUT_GRAFANA        default y: a rejected push does not end the run
 #   CONTINUE_AFTER_FAILURE          default n: a red regression suite ends the run
 #   EXEC_MINUTES, OBSERVE_INSTANCES, STEP_SECONDS_MIN/MAX, EXECUTION_OBSERVATIONS as in stage 8
+#   RUN_SUBSCRIBERS, SUBSCRIBERS, CHURN_VUS, SUBSCRIBER_MINUTES, SESSION_SECONDS as in stage 9
 #   HEROKU_API_KEY                  required (the repo's .env, loaded by direnv, is the place)
 #   any `ask` value (AWS_PROFILE, TARGET_TYPE, …) by the same name; else the saved value
 #
@@ -510,7 +511,7 @@ say "waiting for both to register with SSM"
 wait_for_ssm "$TARGET_ID"
 wait_for_ssm "$GEN_ID"
 say "target $TARGET_ID (private $TARGET_PRIVATE_IP) · generator $GEN_ID — both Online in SSM"
-warn "both are billing from now until stage 11 (or the ${MAX_HOURS}h safety stop)."
+warn "both are billing from now until stage 12 (or the ${MAX_HOURS}h safety stop)."
 pause
 
 # ── Stage 4 ───────────────────────────────────────────────────────────────
@@ -725,7 +726,7 @@ if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.st
   say ""
   say "regression green on AWS"
 else
-  warn "the regression suite failed — its log is collected in stage 10"
+  warn "the regression suite failed — its log is collected in stage 11"
   confirm "Carry on to the load profile anyway?" CONTINUE_AFTER_FAILURE n || { say "Stopping here — nothing torn down."; exit 1; }
 fi
 pause
@@ -790,6 +791,59 @@ else
 fi
 
 # ── Stage 9 ───────────────────────────────────────────────────────────────
+stage "Subscribers — live websockets held by PIs and staff, with churn"
+say "k6/subscribers.js (ticket 022): a steady population of Explore-tab and"
+say "Observe-browser subscribers on graphql-transport-ws, plus sessions that come"
+say "and go. Measures the round trip from an edit's HTTP ack to the event on the"
+say "same socket, ping latency, drops and reconnects. The odb is sampled again."
+printf '\n'
+
+RAN_SUBS=""
+SUB_MINUTES="${SUBSCRIBER_MINUTES:-10}"
+SUB_STEADY="${SUBSCRIBERS:-50}"
+SUB_CHURN="${CHURN_VUS:-10}"
+note "Enter skips this stage (the prompt is y/N) — type y to run it."
+if confirm "Run the subscribers profile now ($SUB_STEADY steady + $SUB_CHURN churning, $SUB_MINUTES minutes)?" RUN_SUBSCRIBERS n; then
+  say "re-arming the safety stop on both instances: $((SUB_MINUTES + 60)) minutes from now"
+  for id in "$TARGET_ID" "$GEN_ID"; do
+    ssh_to "$id" "sudo shutdown -c 2>/dev/null; sudo shutdown -P +$((SUB_MINUTES + 60))" >/dev/null 2>&1 \
+      || warn "could not re-arm the safety stop on $id — watch its uptime"
+  done
+
+  SAMPLE_UNTIL="\$(( \$(date +%s) + $((SUB_MINUTES * 60 + 240)) ))"
+  ssh_to "$TARGET_ID" "mkdir -p ~/gpp-tests/out && setsid -f sh -c \
+    'end=$SAMPLE_UNTIL; while [ \$(date +%s) -lt \$end ]; do echo \"\$(date -u +%FT%TZ) \$(sudo docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\" | tr \"\\n\" \";\")\"; sleep 30; done' \
+    < /dev/null > ~/gpp-tests/out/odb-stats-subscribers.log 2>&1; sleep 1" \
+    || warn "could not start the memory sampler on the target"
+  say "sampling container memory on the target every 30 s (started $(date -u +%H:%M:%SZ))"
+
+  # The churn executor's ramp/hold/drain follow the stage length: one minute up, the rest
+  # held, two minutes draining. Subscribers log in as the fabricated PI and staff users.
+  SUB_HOLD=$(( SUB_MINUTES > 3 ? SUB_MINUTES - 3 : 1 ))
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup sh -c '. stack/.env.standard-users; . out/grafana.env; exec env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    SUBSCRIBERS=$SUB_STEADY CHURN_VUS=$SUB_CHURN DURATION=${SUB_MINUTES}m \
+    SESSION_SECONDS=${SESSION_SECONDS:-120} CHURN_RAMP=1m CHURN_HOLD=${SUB_HOLD}m CHURN_DRAIN=2m \
+    k6 run $GRAFANA_ARGS --summary-trend-stats avg,min,med,max,p\(90\),p\(95\),p\(99\) \
+    --summary-export out/k6-subscribers-summary.json k6/subscribers.js' \
+    < /dev/null > out/k6-subscribers.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
+    say "running detached on the generator since $(date -u +%H:%M:%SZ); following the log."
+    note "Ctrl-C stops the tail, not the run. Re-attach with:"
+    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "    then: tail -f ~ubuntu/gpp-tests/out/k6-subscribers.log"
+    printf '\n'
+    follow_k6 "$GEN_ID" gpp-tests/out/k6-subscribers.log
+  else
+    warn "k6 did not start on the generator — the end of its log:"
+    ssh_to "$GEN_ID" "tail -n 20 gpp-tests/out/k6-subscribers.log" || true
+  fi
+  RAN_SUBS=1
+  pause "Run finished — press Enter to continue"
+else
+  say "skipped the subscribers profile"
+fi
+
+# ── Stage 10 ──────────────────────────────────────────────────────────────
 stage "The full load profile — 0→50→200 VUs, ~40 minutes"
 say "OTEL_ENVIRONMENT=aws-loadtest tags the summary as its own environment, so"
 say "these numbers never blend into a Heroku baseline."
@@ -833,7 +887,7 @@ else
   say "skipped the load profile"
 fi
 
-# ── Stage 10 ──────────────────────────────────────────────────────────────
+# ── Stage 11 ──────────────────────────────────────────────────────────────
 stage "Collect the numbers"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression-summary.json" "out/k6-aws-regression-$STAMP.json" 2>/dev/null \
@@ -871,6 +925,35 @@ if [[ -n "$RAN_EXEC" ]]; then
   note "finding for the odb team before any surge run. The samples are in the stats log."
 fi
 
+if [[ -n "$RAN_SUBS" ]]; then
+  scp_from "$GEN_ID" "gpp-tests/out/k6-subscribers-summary.json" "out/k6-aws-subscribers-$STAMP.json" 2>/dev/null \
+    && say "saved out/k6-aws-subscribers-$STAMP.json" || warn "no subscribers summary to collect"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-subscribers.log" "out/k6-aws-subscribers-$STAMP.log" 2>/dev/null || true
+  scp_from "$TARGET_ID" "gpp-tests/out/odb-stats-subscribers.log" "out/odb-stats-subscribers-aws-$STAMP.log" 2>/dev/null \
+    && say "saved out/odb-stats-subscribers-aws-$STAMP.log" || warn "no memory samples to collect"
+  printf '\n'
+
+  [[ -f "out/k6-aws-subscribers-$STAMP.json" ]] && node --input-type=commonjs -e '
+  const fs = require("fs");
+  const s = require("./out/k6-aws-subscribers-'"$STAMP"'.json");
+  const m = s.metrics ?? {};
+  const p = (k, q) => m[k]?.[q]?.toFixed(0) ?? "—";
+  const c = (k) => m[k]?.count ?? 0;
+  console.log("  sockets opened     :", c("odb_ws_connections"), "· reconnects", c("odb_ws_reconnects"), "· unanswered pings", c("odb_ws_unanswered_pings"), "· lost events", c("odb_ws_lost_events"));
+  console.log("  ping               : explore-tab p95", p("odb_ws_ping{scenario:explore-tab}", "p(95)"), "ms · observe-browser p95", p("odb_ws_ping{scenario:observe-browser}", "p(95)"), "ms");
+  console.log("  round trip (ack→event) : Explore p95", p("odb_ws_round_trip{operation:ProgramObservationsDelta}", "p(95)"), "ms · Observe p95", p("odb_ws_round_trip{operation:ObservationEdits}", "p(95)"), "ms");
+  console.log("  event latency (send→event): Explore p95", p("odb_ws_event_latency{operation:ProgramObservationsDelta}", "p(95)"), "ms · Observe p95", p("odb_ws_event_latency{operation:ObservationEdits}", "p(95)"), "ms");
+  console.log("  checks             :", ((m.checks?.value ?? 0) * 100).toFixed(2) + "%");
+  console.log("  graphql errors     :", c("odb_graphql_errors"));
+  try {
+    const lines = fs.readFileSync("./out/odb-stats-subscribers-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
+    const odb = lines.map((l) => l.split(";").find((x) => x.includes("odb-1")) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
+    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+  } catch (_e) { console.log("  odb memory         : no samples"); }
+  ' || warn "could not summarise the subscribers run — the raw JSON is in out/"
+  printf '\n'
+fi
+
 if [[ -n "$RAN_LOAD" ]]; then
   scp_from "$GEN_ID" "gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json" 2>/dev/null \
     && say "saved out/k6-aws-$STAMP.json" || warn "no load summary to collect"
@@ -898,7 +981,7 @@ if [[ -n "$RAN_LOAD" ]]; then
 fi
 pause
 
-# ── Stage 11 ──────────────────────────────────────────────────────────────
+# ── Stage 12 ──────────────────────────────────────────────────────────────
 stage "Tear down — the stage that decides the bill"
 owned_or_die "$TARGET_ID" "$GEN_ID"
 warn "Two instances are still running: $TARGET_ID and $GEN_ID"

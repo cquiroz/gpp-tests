@@ -88,9 +88,9 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   SEED_PROGRAMS_MIN=1 SEED_PROGRAMS_MAX=2 npm run k6:load
 ```
 
-On AWS, unattended, from this laptop — the regression suite and the execution profile against
-the AWS pair, the pair stopped at the end or on any failure, the run logged to `out/`
-(`--load` adds the 40-minute trend profile, `--help` lists the rest):
+On AWS, unattended, from this laptop — the regression suite, the execution profile and the
+subscriber population against the AWS pair, the pair stopped at the end or on any failure, the
+run logged to `out/` (`--load` adds the 40-minute trend profile, `--help` lists the rest):
 
 ```bash
 loadtest/aws-run.sh

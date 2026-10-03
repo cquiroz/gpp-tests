@@ -115,14 +115,17 @@ errors, overhead p95 606 ms / p99 648 ms; odb resident memory 4.6 → 15.5 GiB, 
 image's heap sizing (ticket 021, `research/odb-memory-growth-handoff.md`). Stage 4 now passes
 `ODB_JAVA_OPTS` capping the odb heap at 60 % of its container.
 
-**The standard run is one command:** `loadtest/aws-run.sh` (regression + 20-minute execution,
-stop at the end; `--load`, `--realistic`, `--minutes`, `--instances`, `--terminate`). It is the
+**The standard run is one command:** `loadtest/aws-run.sh` (regression + 20-minute execution +
+10-minute subscribers with 50 steady and 10 churning, stop at the end; `--load`, `--realistic`,
+`--minutes`, `--instances`, `--subscribers N`, `--no-subscribers`, `--terminate`). Stage 9 of the
+wizard runs the subscribers and samples the odb again. It is the
 AUTO-mode wizard with the usual answers and caffeinate.
 
-**Follow-up from 022 (2026-10-03):** the wizard has no stage for `k6/subscribers.js` yet. The
-generator already has everything it needs (the standard-users file ships in stage 5, the
-Grafana file in stage 6), so it is one more detached run like stage 8; add it when the surge
-profile (018) decides how the populations compose, or run it by hand over SSM meanwhile.
+**Follow-up from 022 (2026-10-03), done the same day:** stage 9 runs `k6/subscribers.js` detached
+on the generator (50 steady + 10 churning for 10 minutes by default, `RUN_SUBSCRIBERS`,
+`SUBSCRIBERS`, `CHURN_VUS`, `SUBSCRIBER_MINUTES`, `SESSION_SECONDS`), samples the odb into its own
+stats file, and the collect stage prints sockets, reconnects, unanswered pings, lost events, ping
+and round-trip p95 per shape. `loadtest/aws-run.sh` includes it by default (`--no-subscribers`).
 
 **Where this leaves the ticket (2026-10-02):** the manual path is proven under the procedure, so
 the surge work (021, 022) proceeds locally and boots AWS through the wizard when it needs real
