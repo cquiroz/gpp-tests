@@ -104,6 +104,13 @@ Settled during charting (constraints for every ticket):
   14 modes (11 calculated, visitor, Keck and Subaru exchange) as the fabricated PI, at both
   layers. k6 builds each mode from `lib/observing-modes.js`; the browser picks it in Explore and
   takes Explore's defaults. Green in the nightly since 2026-10-02. MOS waits on 028.
+- [Observe execution VUs and the executable-observation seed](tickets/021-observe-execution-vus-and-seed.md) —
+  built 2026-10-03 against lucuma-apps main of 2026-10-02 (background event sender, five
+  blocking points): `ObserveInstance` in `k6/lib/execution.js`, six execution operations,
+  `odb_step_overhead` and its per-point breakdown, seed as the service role with no state
+  transitions needed. Green locally and in the regression suite (one step per night). The
+  config read goes over HTTP until 022; the odb's memory growth under this traffic is a watch
+  item for the first AWS run.
 - [Upstream: data-testids for Explore's observation configuration](tickets/031-upstream-testids-for-observation-configuration.md) —
   written here and merged as lucuma-apps#1623 (2026-10-01): mode picker, instrument filter,
   mode-table rows, Accept, sequence time and steps, visitor editor.
@@ -112,11 +119,11 @@ Settled during charting (constraints for every ticket):
 
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
 manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
-OIDC role, or a runner inside `nl-vpc`),
-**021** (Observe execution VUs + seed), **022** (graphql-ws client + subscribers), **023**
-(surge SLOs + verdict), **024** (telemetry stack, HITL), **027** (read production sizing,
-HITL), **028** (object store + attachment uploads — now blocks 017). Order of build:
-021 → 022 → 028 → 017 → 018/023, developed locally; 016 in parallel.
+OIDC role, or a runner inside `nl-vpc`), **022** (graphql-ws client + subscribers; also
+moves the execution VU's config read onto the socket), **023** (surge SLOs + verdict),
+**024** (telemetry stack, HITL), **027** (read production sizing, HITL), **028** (object
+store + attachment uploads — now blocks 017). Order of build: 022 → 028 → 017 → 018/023,
+developed locally; 016 in parallel. 021 closed 2026-10-03.
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
@@ -134,6 +141,10 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
   depends on the span-attribute ask (019) landing upstream first.
 - **Observe stall budget confirmation** — take the first surge run's numbers to the
   Observe developers and replace the provisional figures.
+- **odb memory under execution traffic** — locally (amd64 emulation, 2 GiB limit) the odb's
+  resident memory climbed from 1.2 GiB to the limit in ~3 minutes of two Observe instances at
+  3–5 s per step and was OOM-killed (ticket 021). Sample the odb's memory across the first
+  AWS execution run; a climb there is an odb finding that precedes any surge run.
 - **Dev-process integration in gpp-tests** — the per-merge Explore lane, Slack alerts,
   and promote gate decided in [ticket 010](tickets/010-decide-dev-process-integration.md)
   still need to be built, after the stress work.

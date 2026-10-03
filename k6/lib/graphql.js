@@ -9,34 +9,92 @@ import { endpoints } from "./config.js";
 import { graphqlErrors, readDuration, tags, writeDuration } from "./metrics.js";
 
 /**
+ * @typedef {object} GqlOptions
+ * @property {string} scenario
+ * @property {boolean} [measure] `false` keeps a sample out of the read/write trends — used
+ *   for the per-VU seeding phase, which happens during the ramp and is not part of the
+ *   measured mix.
+ * @property {string[]} [tolerate] `odb_error` tags that are a normal state rather than a
+ *   failure; the request is still timed, but it does not count as an error.
+ * @property {Record<string, string>} [headers] Extra request headers (Observe sends its
+ *   `Idempotency-Key` this way, so its http client can retry a mutation).
+ * @property {string} [timeout] Request timeout, k6 duration syntax; k6's default is 60 s.
+ */
+
+/**
  * @param {{token: string}} session
  * @param {import('../../lib/odb-operations.js').Operation} operation
- * @param {{scenario: string, measure?: boolean, tolerate?: string[]}} opts
- *   `measure: false` keeps a sample out of the read/write trends — used for the per-VU
- *   seeding phase, which happens during the ramp and is not part of the measured mix.
- *   `tolerate` lists `odb_error` tags that are a normal state rather than a failure; the
- *   request is still timed, but it does not count as an error.
+ * @param {GqlOptions} opts
  * @returns {any | undefined} the `data` payload, or undefined if the call failed
  */
-export function gql(session, operation, { scenario, measure = true, tolerate }) {
-  const kind = OPERATION_KIND[operation.operationName] || "read";
-  const requestTags = tags({ scenario, operation: operation.operationName });
+export function gql(session, operation, opts) {
+  const { body, params } = prepare(session, operation, opts);
+  const response = http.post(endpoints.odbGraphqlUrl, body, params);
+  return settle(response, operation, opts);
+}
 
-  const response = http.post(
-    endpoints.odbGraphqlUrl,
-    JSON.stringify({
+/**
+ * The same call without blocking the VU: the request runs in the background and the promise
+ * resolves to what {@link gql} would have returned. This is how the execution VU reproduces
+ * Observe's event sender, which hands mutations off and only waits at the step's blocking
+ * points (ticket 021).
+ *
+ * A request that never completes (status 0: timeout, connection lost) is retried once with
+ * the same operation — the idempotency key makes that safe, which is exactly why Observe
+ * sends one. The failed attempt is still recorded, so a timeout is visible to the SLOs.
+ *
+ * @param {{token: string}} session
+ * @param {import('../../lib/odb-operations.js').Operation} operation
+ * @param {GqlOptions & {retries?: number}} opts
+ * @returns {Promise<any | undefined>}
+ */
+export async function gqlAsync(session, operation, opts) {
+  const { body, params } = prepare(session, operation, opts);
+  let attempts = 1 + (opts.retries ?? 0);
+  let response;
+  while (attempts > 0) {
+    attempts -= 1;
+    response = await http.asyncRequest("POST", endpoints.odbGraphqlUrl, body, params);
+    if (response.status !== 0 || attempts === 0) break;
+    settle(response, operation, opts);
+  }
+  return settle(response, operation, opts);
+}
+
+/**
+ * @param {{token: string}} session
+ * @param {import('../../lib/odb-operations.js').Operation} operation
+ * @param {GqlOptions} opts
+ */
+function prepare(session, operation, { scenario, headers, timeout }) {
+  const params = {
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${session.token}`,
+      ...headers,
+    },
+    tags: tags({ scenario, operation: operation.operationName }),
+  };
+  if (timeout) params.timeout = timeout;
+  return {
+    body: JSON.stringify({
       operationName: operation.operationName,
       query: operation.query,
       variables: operation.variables,
     }),
-    {
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${session.token}`,
-      },
-      tags: requestTags,
-    },
-  );
+    params,
+  };
+}
+
+/**
+ * Judge a response, record the check and the metrics, and return the payload.
+ *
+ * @param {any} response
+ * @param {import('../../lib/odb-operations.js').Operation} operation
+ * @param {GqlOptions} opts
+ */
+function settle(response, operation, { scenario, measure = true, tolerate }) {
+  const kind = OPERATION_KIND[operation.operationName] || "read";
 
   // A GraphQL server answers 200 with an `errors` array, so HTTP status alone is not enough.
   let data;

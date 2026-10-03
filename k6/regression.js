@@ -10,6 +10,7 @@ import { fail } from "k6";
 import tempo from "./vendor/http-instrumentation-tempo.js";
 import { loginAsGuest, loginAsStandardUser } from "./lib/auth.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
+import { ObserveInstance, seedExecutableObservations, serviceSession } from "./lib/execution.js";
 import {
   calculatedResultsScenario,
   createObservationScenario,
@@ -18,6 +19,7 @@ import {
   observingModesScenario,
   readMixScenario,
   scenario,
+  scenarioAsync,
 } from "./lib/scenarios.js";
 
 if (TEMPO_ENABLED) {
@@ -38,7 +40,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default async function () {
   console.log(`regression run ${TESTID} against ${endpoints.odbGraphqlUrl}`);
 
   // Scenario 1: login is a token fetch at this layer.
@@ -85,4 +87,21 @@ export default function () {
   scenario("observing-modes", () =>
     Boolean(piProgramId) && observingModesScenario(pi, piProgramId),
   );
+
+  // One executed step, Observe's way, as the service identity (ticket 021): keeps the
+  // execution mutations and the execution-config read understood by the -dev odb, the way
+  // the scenarios above keep Explore's documents. Compressed cadence; the stall budget is the
+  // surge run's business, not this one's.
+  const service = serviceSession();
+  const executable = seedExecutableObservations(service, {
+    site: "GN",
+    count: 1,
+    label: `gpp-tests execution ${TESTID}`,
+  });
+  const observe = new ObserveInstance(service, {
+    site: "GN",
+    observationIds: executable,
+    cadence: { min: 2, max: 3 },
+  });
+  await scenarioAsync("execution", async () => (await observe.step()) === "ok");
 }

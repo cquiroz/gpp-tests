@@ -54,6 +54,30 @@ export function scenario(name, body) {
 }
 
 /**
+ * {@link scenario} for an async body: awaits it, so the recorded duration and pass/fail
+ * describe the whole step rather than the promise's creation. The execution VU's steps are
+ * async because Observe's event sender is (ticket 021).
+ *
+ * @template T
+ * @param {string} name
+ * @param {() => Promise<T>} body resolves to a falsy value to signal failure
+ * @returns {Promise<T | undefined>}
+ */
+export async function scenarioAsync(name, body) {
+  const started = Date.now();
+  let result;
+  let ok = false;
+  try {
+    result = await body();
+    ok = Boolean(result);
+  } finally {
+    scenarioDuration.add(Date.now() - started, tags({ scenario: name }));
+    scenarioPass.add(ok, tags({ scenario: name }));
+  }
+  return ok ? result : undefined;
+}
+
+/**
  * Scenario 2: create a program.
  * @param {{token: string}} session
  * @param {{name?: string, measure?: boolean}} [opts]

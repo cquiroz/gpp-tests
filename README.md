@@ -23,7 +23,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `schema/` | Vendored `OdbSchema.graphql`, so every operation is schema-validated offline ([why](schema/README.md)). |
 | `stack/` | The ephemeral regression stack: `docker-compose.yml`, Caddy config, bootstrap scripts (spec §3). |
 | `tests/` | The Playwright journey (spec §5) and its support layer. Selectors are all in `tests/support/selectors.ts`. |
-| `k6/` | The k6 suites: `regression.js` (scenario variants) and `load.js` (the 200-VU model), plus their libs. |
+| `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model) and `execution.js` (Observe instances executing sequences, ticket 021), plus their libs. |
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
@@ -87,6 +87,15 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   SEED_PROGRAMS_MIN=1 SEED_PROGRAMS_MAX=2 npm run k6:load
 ```
 
+Observe execution on its own — N Observe instances executing seeded GMOS observations as the
+service identity, reporting the step ODB overhead and its breakdown by blocking point
+(`k6/lib/execution.js`, [ticket 021](wayfinder/tickets/021-observe-execution-vus-and-seed.md)):
+
+```bash
+source stack/.env.generated
+OBSERVE_INSTANCES=2 STEP_SECONDS_MIN=5 STEP_SECONDS_MAX=10 DURATION=3m npm run k6:execution
+```
+
 ## How the spec maps onto the code
 
 | Spec | Where |
@@ -105,9 +114,12 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   k6 regression pass nightly on
   [cquiroz/gpp-tests](https://github.com/cquiroz/gpp-tests/actions). The one red night so far
   (2026-09-07) was the odb changing a rule under the suite, caught within a day.
-- **Load target: not provisioned.** The 200-VU profile has run once, by hand, on AWS
-  (clean at 200 VUs). `performance.yml` exits green with a notice until the `LOADTEST_*`
-  repository variables exist; no baseline nights have been captured.
+- **Load target: AWS, proven, manual boot.** The 200-VU profile runs on NOIRLab's shared AWS
+  account under IT's us-west-2 launch procedure (`loadtest/aws-first-run.sh`): 2026-10-02,
+  p95 168 ms, 0 errors, metrics streaming to Grafana Cloud. The pair is stopped between runs.
+  Workflow-driven boot waits on IT granting CI an identity
+  ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)); `performance.yml` still
+  exits green with a notice until the `LOADTEST_*` repository variables exist.
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
   [map](wayfinder/map-gpp-tests.md); the decision behind the order is
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).

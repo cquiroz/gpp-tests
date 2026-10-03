@@ -17,6 +17,19 @@ export const graphqlErrors = new Counter("odb_graphql_errors");
 export const scenarioPass = new Rate("gpp_scenario_pass");
 export const scenarioDuration = new Trend("gpp_scenario_duration", true);
 
+// The execution VU's stall metrics (ticket 021, CONTEXT.md "Step ODB overhead"). Per-mutation
+// latency lives in the read/write trends above, tagged by operation; these capture what the
+// telescope actually feels: the time one step spent unable to proceed until the ODB answered.
+//
+//   odb_step_overhead  — per step, the sum of its blocking points (the surge SLO's subject).
+//   odb_step_wait      — one sample per blocking point, tagged `operation` with the point's
+//                        name (RecordVisit, StepRecorded, RecordDataset, Flush,
+//                        ExecutionConfig), so a breach can be attributed. Five values.
+//   gpp_execution_steps — steps completed, the execution VU's throughput.
+export const stepOverhead = new Trend("odb_step_overhead", true);
+export const stepWait = new Trend("odb_step_wait", true);
+export const stepsExecuted = new Counter("gpp_execution_steps");
+
 /**
  * Build the label set for a sample. Always includes the suite; `testid` only when the
  * escape hatch is open.

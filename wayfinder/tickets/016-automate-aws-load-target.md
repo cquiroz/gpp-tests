@@ -90,5 +90,16 @@ usable for the surge work. Lessons, both fixed in the wizard:
   the profile. It was cancelled over SSM by hand. The wizard now re-arms it 90 minutes ahead
   just before the profile starts.
 
-Grafana remote-write answered 401 for the whole run, so the credentials entered were wrong.
-Nothing reached Grafana; the local summary is the record.
+Grafana remote-write answered 401 for the whole run: the token entered was a `glsa_` service
+account token, and remote-write needs a `glc_` Access Policy token. Nothing reached Grafana; the
+local summary is that run's record. Fixed the same day: the wizard reads `K6_PROMETHEUS_RW_*`
+from the gitignored `.env`, proves the push from the generator with `tools/verify-metrics.sh` at
+the smoke stage, and streams smoke, regression and load runs with the same credentials. The
+re-run confirmed metrics arriving in Grafana Cloud. Both instances are stopped between runs.
+
+**Where this leaves the ticket (2026-10-02):** the manual path is proven under the procedure, so
+the surge work (021, 022) proceeds locally and boots AWS through the wizard when it needs real
+numbers. The automation half waits on IT: a GitHub OIDC role for the repository scoped by the
+`gpp-tests:loadtest` tag (preferred, no stored credential, destructive calls refused by the API
+on untagged resources), or a self-hosted runner inside `nl-vpc` with the same tag-conditioned
+instance profile. Ask carried by Carlos.

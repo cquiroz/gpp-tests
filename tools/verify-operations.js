@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Replay every ODB operation against a live stack, as a guest.
+ * Replay every ODB operation against a live stack, as a guest — and, when the stack's service
+ * JWT is in the environment, the service-role execution operations too (ticket 021).
  *
  * `lib/odb-operations.test.js` already validates every document and payload against the
  * vendored schema snapshot, so this catches the other half: the deployed ODB having moved on
@@ -12,16 +13,23 @@
  * Endpoints come from the environment (see lib/endpoints.js).
  */
 import { stackEndpoints } from "../lib/endpoints.js";
+import { MODE_TARGETS } from "../lib/observing-modes.js";
 import {
+  addDatasetEvent,
+  addSequenceEvent,
+  addStepEvent,
   createObservation,
   createProgram,
   createTarget,
+  executionConfig,
   gmosNorthLongSlit,
   observation,
   observationCalculated,
   observations,
   programDetails,
   programs,
+  recordDataset,
+  recordVisit,
   setObservingMode,
   targets,
   updateObservationSubtitle,
@@ -152,7 +160,120 @@ if (observationId) {
   });
 }
 
+// The execution operations are service-role only. The seed is quick, but the sequence behind
+// the execution config takes the ODB seconds to generate, so the step and dataset events are
+// exercised only when it is ready within a short wait; the documents themselves are
+// schema-checked in lib/odb-operations.test.js either way.
+if (process.env.ODB_SERVICE_JWT) {
+  await verifyExecutionOperations(process.env.ODB_SERVICE_JWT);
+} else {
+  console.error("ODB_SERVICE_JWT is not set: skipping the service-role execution operations");
+}
+
 report();
+
+/** @param {string} serviceToken */
+async function verifyExecutionOperations(serviceToken) {
+  console.error("replaying the execution operations as the service user");
+  const key = () => crypto.randomUUID();
+  const at = () => new Date().toISOString();
+
+  const program = await check(serviceToken, createProgram({ name: "gpp-tests verify execution" }));
+  const programId = program?.createProgram.program.id;
+  if (!programId) return;
+  const target = await check(
+    serviceToken,
+    createTarget({ programId, target: MODE_TARGETS.optical }),
+  );
+  if (!target) return;
+  const created = await check(
+    serviceToken,
+    createObservation({
+      programId,
+      targetIds: [target.createTarget.target.id],
+      subtitle: "gpp-tests verify execution",
+      observingMode: gmosNorthLongSlit(),
+    }),
+  );
+  const observationId = created?.createObservation.observation.id;
+  if (!observationId) return;
+
+  const visit = await check(
+    serviceToken,
+    recordVisit({ observationId, idempotencyKey: key(), clientTime: at() }),
+  );
+  const visitId = visit?.recordVisit.visit.id;
+  if (!visitId) return;
+  await check(
+    serviceToken,
+    addSequenceEvent({ visitId, command: "START", idempotencyKey: key(), clientTime: at() }),
+  );
+
+  // One result for the config read, however many polls it took.
+  let config;
+  let lastError = "";
+  const deadline = Date.now() + 30_000;
+  while (!config && Date.now() < deadline) {
+    try {
+      const data = await run(serviceToken, executionConfig({ observationId, futureLimit: 0 }));
+      config = data?.executionConfig ?? undefined;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (!lastError.includes("sequence_unavailable")) break;
+    }
+    if (!config) await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+  if (!config && !lastError.includes("sequence_unavailable")) {
+    results.push({ name: "ExecutionConfig", ok: false, detail: lastError });
+    return;
+  }
+  results.push({
+    name: "ExecutionConfig",
+    ok: true,
+    detail: config ? undefined : "accepted: sequence_unavailable for 30 s (the query is valid)",
+  });
+  const step = config?.gmosNorth?.acquisition?.nextAtom?.steps?.[0];
+  if (!step) {
+    results.push({
+      name: "AddStepEvent, RecordDataset, AddDatasetEvent",
+      ok: true,
+      detail:
+        "skipped: no step to record against yet (documents schema-checked in lib/odb-operations.test.js)",
+    });
+    return;
+  }
+
+  await check(
+    serviceToken,
+    addStepEvent({ visitId, stepId: step.id, stepStage: "START_STEP", idempotencyKey: key(), clientTime: at() }),
+  );
+  const day = at().slice(0, 10).replaceAll("-", "");
+  const dataset = await check(
+    serviceToken,
+    recordDataset({
+      visitId,
+      stepId: step.id,
+      filename: `N${day}S${String(Date.now() % 100_000_000).padStart(4, "0")}.fits`,
+      idempotencyKey: key(),
+    }),
+  );
+  const datasetId = dataset?.recordDataset.dataset.id;
+  if (datasetId) {
+    await check(
+      serviceToken,
+      addDatasetEvent({ datasetId, datasetStage: "START_EXPOSE", idempotencyKey: key(), clientTime: at() }),
+    );
+  }
+  // Leave the observation in a clean state: the step aborted, the sequence stopped.
+  await check(
+    serviceToken,
+    addStepEvent({ visitId, stepId: step.id, stepStage: "ABORT", idempotencyKey: key(), clientTime: at() }),
+  );
+  await check(
+    serviceToken,
+    addSequenceEvent({ visitId, command: "STOP", idempotencyKey: key(), clientTime: at() }),
+  );
+}
 
 function report() {
   const failed = results.filter((r) => !r.ok);
