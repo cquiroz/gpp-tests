@@ -111,6 +111,12 @@ Settled during charting (constraints for every ticket):
   transitions needed. Green locally and in the regression suite (one step per night). The
   config read goes over HTTP until 022; the odb's memory growth under this traffic is a watch
   item for the first AWS run.
+- [graphql-transport-ws client for k6 and the subscriber VUs](tickets/022-graphql-ws-client-and-subscriber-vus.md) —
+  built 2026-10-03 on k6's own `k6/websockets`, no extension: `GraphqlWsClient` (connect,
+  subscribe with resubscribe on reconnect, one-shot query judged like `gql`, ping/pong), the
+  Explore-tab (8 subscriptions) and Observe-browser (3) subscriber VUs with churn, the execution
+  VU's config read on its own socket, and a regression smoke. Local first numbers: ping p95
+  10 ms, round trip from ack p95 47 ms, event latency from send p95 1 s under a starved odb.
 - [Upstream: data-testids for Explore's observation configuration](tickets/031-upstream-testids-for-observation-configuration.md) —
   written here and merged as lucuma-apps#1623 (2026-10-01): mode picker, instrument filter,
   mode-table rows, Accept, sequence time and steps, visitor editor.
@@ -119,22 +125,25 @@ Settled during charting (constraints for every ticket):
 
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
 manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
-OIDC role, or a runner inside `nl-vpc`), **022** (graphql-ws client + subscribers; also
-moves the execution VU's config read onto the socket), **023** (surge SLOs + verdict),
-**024** (telemetry stack, HITL), **027** (read production sizing, HITL), **028** (object
-store + attachment uploads — now blocks 017). Order of build: 022 → 028 → 017 → 018/023,
-developed locally; 016 in parallel. 021 closed 2026-10-03.
+OIDC role, or a runner inside `nl-vpc`), **023** (surge SLOs + verdict), **024** (telemetry
+stack, HITL), **027** (read production sizing, HITL), **028** (object store + attachment
+uploads — now blocks 017). Order of build: 028 → 017 → 018/023, developed locally; 016 in
+parallel. 021 and 022 closed 2026-10-03.
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
 
 ## Not yet specified
 
-- **Subscription round-trip SLO** — a provisional figure once 022 measures one.
+- **Subscription round-trip SLO** — provisional from 022's local run: event latency from the
+  mutation's send p95 < 1 s, round trip from its acknowledgement p95 < 500 ms, zero unanswered
+  pings. To be replaced by the AWS figures from the next unattended run (023 owns the file).
 - **Attachment upload leg of the surge model** — sizes and count per submission, once 028
   gives the stack somewhere to upload.
-- **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers;
-  needs a correlation channel k6 does not have. Follow-up after v1.
+- **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers. 022 left a
+  design: edits already carry the VU id and a timestamp in the subtitle, and all VUs share one
+  k6 clock, so a collector VU subscribed across the subscriber programs can time any VU's edit
+  from the payload, no external store. Follow-up after v1.
 - **Trend-run threshold recalibration** — baselines reset once the real target exists.
 - **Post-deadline calibration** — capture telemetry at the next real CfP close (the
   H0-H4 queries in `research/cfp-deadline-telemetry.md`) and adjust the surge model;

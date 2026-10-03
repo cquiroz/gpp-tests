@@ -147,7 +147,7 @@ flowchart LR
   guest["Guest VU<br/>fresh SSO guest per VU<br/>trend run: 200 of them"]
   pi["PI and staff VUs<br/>fabricated standard users<br/>proposals, Explore reads"]
   execv["Execution VU<br/>Observe's service JWT<br/>2 or 4 Observe instances"]
-  sub["Subscriber VU<br/>PI or staff identity<br/>live subscriptions (ticket 022)"]
+  sub["Subscriber VU<br/>PI or staff identity<br/>8 or 3 live subscriptions"]
   sso["SSO<br/>auth-as-guest, refresh"]
   http["odb GraphQL over HTTP<br/>/odb"]
   ws["odb GraphQL over websocket<br/>/ws graphql-transport-ws"]
@@ -159,7 +159,7 @@ flowchart LR
   guest --> http
   pi --> http
   execv --> http
-  execv -. "execution config read (022)" .-> ws
+  execv -- "execution config read" --> ws
   sub --> ws
   http --> itc
   http -. "async digests" .-> obscalc
@@ -170,7 +170,7 @@ flowchart LR
 | Guest | A new SSO guest per VU, refreshed via its cookie | Creates programs, targets and observations, then a 60/40 read/write mix of what Explore issues when a program opens | Trend run, regression |
 | PI / staff | Users inserted into the SSO database at bootstrap, 1-hour JWTs via refresh token | Proposals against a call, observations in every observing mode | Regression; surge proposal loop (ticket 017) |
 | Execution | The service JWT the stack mints for odb, itc and obscalc | One Observe instance's events: visit, sequence, step and dataset events, dataset records, execution-config reads | Execution profile, regression smoke, surge |
-| Subscriber | PI (Explore tab) or staff (Observe browser) | Long-lived `graphql-transport-ws` subscriptions; measures the round trip from a mutation's ack to the matching event | Surge (ticket 022) |
+| Subscriber | PI (Explore tab) or staff (Observe browser) | Long-lived `graphql-transport-ws` subscriptions, eight per tab and three per browser; edits on a cadence measure the round trip from a mutation's ack to the matching event, pings measure the socket | Subscriber profile, regression smoke, surge |
 
 ## The execution VU: one step as Observe performs it
 
@@ -217,7 +217,8 @@ Every mutation carries a UUID idempotency key in its variables and in the `Idemp
 header, and the VU retries a timed-out request once with the same key, as Observe's HTTP
 client does. The seed creates GMOS long-slit observations as the service role and polls the
 execution config until the odb serves one; no workflow state transitions are needed. The
-execution-config read goes over HTTP until the websocket client lands (ticket 022).
+execution-config read goes over the instance's own `graphql-transport-ws` socket, as
+Observe's does; the client is the same one the subscriber VUs use (`k6/lib/graphql-ws.js`).
 
 ## Telemetry and verdicts
 

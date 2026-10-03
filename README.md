@@ -23,7 +23,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `schema/` | Vendored `OdbSchema.graphql`, so every operation is schema-validated offline ([why](schema/README.md)). |
 | `stack/` | The ephemeral regression stack: `docker-compose.yml`, Caddy config, bootstrap scripts (spec §3). |
 | `tests/` | The Playwright journey (spec §5) and its support layer. Selectors are all in `tests/support/selectors.ts`. |
-| `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model) and `execution.js` (Observe instances executing sequences, ticket 021), plus their libs. |
+| `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model), `execution.js` (Observe instances executing sequences, ticket 021) and `subscribers.js` (held websockets with churn, ticket 022), plus their libs, including the graphql-transport-ws client. |
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
@@ -88,11 +88,12 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   SEED_PROGRAMS_MIN=1 SEED_PROGRAMS_MAX=2 npm run k6:load
 ```
 
-On AWS, unattended, from this laptop — every prompt of the wizard answered from the
-environment, the pair stopped at the end or on any failure, the run logged to `out/`:
+On AWS, unattended, from this laptop — the regression suite and the execution profile against
+the AWS pair, the pair stopped at the end or on any failure, the run logged to `out/`
+(`--load` adds the 40-minute trend profile, `--help` lists the rest):
 
 ```bash
-AUTO=1 RUN_EXECUTION=1 RUN_LOAD=0 TEARDOWN=stop loadtest/aws-first-run.sh
+loadtest/aws-run.sh
 ```
 
 Observe execution on its own — N Observe instances executing seeded GMOS observations as the
@@ -102,6 +103,16 @@ service identity, reporting the step ODB overhead and its breakdown by blocking 
 ```bash
 source stack/.env.generated
 OBSERVE_INSTANCES=2 STEP_SECONDS_MIN=5 STEP_SECONDS_MAX=10 DURATION=3m npm run k6:execution
+```
+
+Subscribers on their own — a steady population of Explore tabs and Observe browsers holding
+graphql-transport-ws subscriptions, users coming and going beside them, each measuring the round
+trip from its own edit to the event on its socket (`k6/lib/subscribers.js`,
+[ticket 022](wayfinder/tickets/022-graphql-ws-client-and-subscriber-vus.md)):
+
+```bash
+source stack/.env.generated && source stack/.env.standard-users
+SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscribers
 ```
 
 ## How the spec maps onto the code

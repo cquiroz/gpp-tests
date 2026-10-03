@@ -31,6 +31,11 @@ Consequences:
 - **On the load target the risk is inverted:** a 24.6 GiB heap leaves native memory 1 GiB;
   a 75-minute surge run would walk the heap to its maximum and then live on that margin. The
   wizard now caps the heap at 60 % of the odb's container (`ODB_JAVA_OPTS`, stage 4).
+- **Local follow-up (2026-10-03, ticket 022 build):** with `ODB_JAVA_OPTS='-Xms768m -Xmx768m'`
+  the local odb's RSS still reached 1.93 GiB under subscriber plus execution traffic, so about
+  1.1 GiB is non-heap under amd64 emulation (metaspace, JIT, threads, Netty buffers, the
+  translation layer). For heavier local runs raise `ODB_MEM_LIMIT` to 3g rather than shrinking
+  the heap further; the 8 GiB Docker VM then needs another container's limit lowered.
 - **Worth telling the odb team, as information rather than a bug:** the launcher's formula
   (a port of Heroku's dyno heuristics) caps "system RAM" at 1 GiB, which fits dynos and not a
   25 GiB container. Production's dynos are small, so nothing is wrong there today.

@@ -11,6 +11,7 @@ import tempo from "./vendor/http-instrumentation-tempo.js";
 import { loginAsGuest, loginAsStandardUser } from "./lib/auth.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
 import { ObserveInstance, seedExecutableObservations, serviceSession } from "./lib/execution.js";
+import { observeBrowserFixture, observeBrowserSession } from "./lib/subscribers.js";
 import {
   calculatedResultsScenario,
   createObservationScenario,
@@ -104,4 +105,12 @@ export default async function () {
     cadence: { min: 2, max: 3 },
   });
   await scenarioAsync("execution", async () => (await observe.step()) === "ok");
+  observe.close();
+
+  // One Observe-browser websocket session as the fabricated staff user (ticket 022): the
+  // graphql-transport-ws handshake, three subscriptions, and two measured round trips from
+  // an HTTP edit to the event on this socket. Short on purpose; the population is k6/subscribers.js.
+  await scenarioAsync("observe-browser", () =>
+    observeBrowserSession(observeBrowserFixture(), { holdMs: 20000, cadenceMs: 4000 }),
+  );
 }

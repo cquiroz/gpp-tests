@@ -24,7 +24,8 @@
     "summary": "node tools/write-run-summary.js",
     "k6:regression": "k6 run --summary-export out/k6-summary.json k6/regression.js",
     "k6:load": "k6 run --summary-export out/k6-summary.json k6/load.js",
-    "k6:execution": "k6 run --summary-export out/k6-summary.json k6/execution.js"
+    "k6:execution": "k6 run --summary-export out/k6-summary.json k6/execution.js",
+    "k6:subscribers": "k6 run --summary-export out/k6-summary.json k6/subscribers.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

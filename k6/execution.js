@@ -68,18 +68,23 @@ export function setup() {
   );
 }
 
+// One iteration is the whole run. The instance holds a websocket for its config reads (ticket
+// 022), and a k6 iteration only ends once the event loop is empty, so an open socket would pin
+// the iteration anyway; looping here makes that explicit and closes the socket at the end.
 export default async function () {
   if (!instance) instance = boot();
 
-  if (instance.remaining === 0) {
-    const seeded = seed(instance.site);
-    if (seeded.length === 0) {
-      exec.test.abort(`VU ${exec.vu.idInTest}: could not seed executable observations`);
+  while (exec.scenario.progress < 1) {
+    if (instance.remaining === 0) {
+      const seeded = seed(instance.site);
+      if (seeded.length === 0) {
+        exec.test.abort(`VU ${exec.vu.idInTest}: could not seed executable observations`);
+      }
+      instance.queue.push(...seeded);
     }
-    instance.queue.push(...seeded);
+    await scenarioAsync("execution", async () => (await instance.step()) === "ok");
   }
-
-  await scenarioAsync("execution", async () => (await instance.step()) === "ok");
+  instance.close();
 }
 
 function boot() {

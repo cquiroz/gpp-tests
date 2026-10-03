@@ -65,6 +65,10 @@
 - **Step ODB overhead** — the time one executed step spends waiting on the odb: the sum of
   the moments at which Observe cannot proceed until the odb answers. The telescope's
   stall metric; per-mutation latency alone does not capture it.
+- **Subscription round trip** — on a subscriber VU, the time from its own mutation's HTTP
+  acknowledgement to the matching event arriving on its own subscription; **event latency**
+  is the same event measured from the mutation's send. Same-VU by construction; cross-VU
+  fan-out is a separate, later measurement.
 - **Surge SLO** — an absolute pass criterion for one class of surge traffic (execution,
   proposals, regular operations, subscriptions). Absolute because the surge claim is
   absolute; the trend run's baseline-relative thresholds are a different thing.

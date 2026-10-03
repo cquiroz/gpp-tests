@@ -30,6 +30,28 @@ export const stepOverhead = new Trend("odb_step_overhead", true);
 export const stepWait = new Trend("odb_step_wait", true);
 export const stepsExecuted = new Counter("gpp_execution_steps");
 
+// The websocket side (ticket 022): what a held graphql-transport-ws socket experiences.
+//
+//   odb_ws_round_trip        — from a mutation's HTTP acknowledgement to the matching event
+//                              on the same VU's subscription; `operation` = the subscription.
+//                              Zero when the event beats the acknowledgement.
+//   odb_ws_event_latency     — the same event measured from the mutation's send instead, the
+//                              fan-out latency a user perceives.
+//   odb_ws_ping              — our ping to the server's pong, the socket's responsiveness.
+//   odb_ws_connections       — sockets opened; odb_ws_reconnects — of those, reconnections
+//                              after a drop (so steady = connections − reconnects).
+//   odb_ws_unanswered_pings  — pings with no pong inside the timeout.
+//   odb_ws_lost_events       — round trips whose event never arrived.
+//   odb_ws_messages          — frames received, `operation` = the protocol message type.
+export const wsRoundTrip = new Trend("odb_ws_round_trip", true);
+export const wsEventLatency = new Trend("odb_ws_event_latency", true);
+export const wsPing = new Trend("odb_ws_ping", true);
+export const wsConnections = new Counter("odb_ws_connections");
+export const wsReconnects = new Counter("odb_ws_reconnects");
+export const wsUnansweredPings = new Counter("odb_ws_unanswered_pings");
+export const wsLostEvents = new Counter("odb_ws_lost_events");
+export const wsMessages = new Counter("odb_ws_messages");
+
 /**
  * Build the label set for a sample. Always includes the suite; `testid` only when the
  * escape hatch is open.

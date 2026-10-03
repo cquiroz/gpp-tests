@@ -14,9 +14,9 @@
 //   Flush            at END_STEP, every outstanding event acknowledged before the next step
 //   ExecutionConfig  the next step read back from the ODB after each step
 //
-// Mutations go over HTTP, one POST each. Observe reads the execution config over the
-// graphql-transport-ws socket; until ticket 022 lands the client, the read here goes over
-// HTTP too (`EXECUTION_CONFIG_TRANSPORT`), and the wait is measured the same way.
+// Mutations go over HTTP, one POST each. Observe reads the execution config over its own
+// graphql-transport-ws socket, and so does each instance here (`k6/lib/graphql-ws.js`, ticket
+// 022); `EXECUTION_CONFIG_TRANSPORT=http` is the fallback, measured the same way.
 //
 // Cadence is a parameter, not the step's real exposure (a GMOS science step is 15 minutes):
 // STEP_SECONDS_MIN/MAX bound a uniform step period, realistic 60–120 s, compressed 5–10 s.
@@ -36,6 +36,7 @@ import {
 } from "../../lib/odb-operations.js";
 import { MODE_TARGETS, OBSERVING_MODES } from "../../lib/observing-modes.js";
 import { PENDING, gql, gqlAsync } from "./graphql.js";
+import { GraphqlWsClient } from "./graphql-ws.js";
 import { stepOverhead, stepWait, stepsExecuted, tags } from "./metrics.js";
 
 /**
@@ -53,6 +54,9 @@ export const CADENCE = {
 
 /** Share of the step period spent configuring (no ODB traffic); the rest is the exposure. */
 const CONFIGURE_SHARE = 0.2;
+
+/** Where the execution-config read goes: Observe's socket, or HTTP as a fallback. */
+const CONFIG_TRANSPORT = __ENV.EXECUTION_CONFIG_TRANSPORT === "http" ? "http" : "ws";
 
 /** Observe's ODB client timeout, and one idempotent retry after it (ticket 020). */
 const REQUEST_TIMEOUT = __ENV.EXECUTION_TIMEOUT || "20s";
@@ -177,6 +181,8 @@ export class ObserveInstance {
     /** @type {Promise<any>[]} outstanding background sends for the current observation */
     this.outstanding = [];
     this.stepsExecuted = 0;
+    /** Observe's read socket: one per instance, the odb serializes operations on it. */
+    this.socket = new GraphqlWsClient(session, { ...EXECUTION, reconnect: true });
   }
 
   /** Observations still to execute, including the current one. */
@@ -256,9 +262,7 @@ export class ObserveInstance {
     const flushed = await waits.measure("Flush", () => this.flush());
 
     // Read the next step back. The engine stalls on this.
-    const config = await this.blocking("ExecutionConfig", waits, () =>
-      executionConfig({ observationId: current.observationId }),
-    );
+    const config = await this.readConfig(current.observationId, waits);
     current.config = config ? config.executionConfig : null;
     current.stepsDone += 1;
     if (current.acquisitionStepsLeft > 0) current.acquisitionStepsLeft -= 1;
@@ -285,7 +289,7 @@ export class ObserveInstance {
     while (!this.current) {
       const observationId = this.queue.shift();
       if (!observationId) return false;
-      const data = await this.blocking("ExecutionConfig", waits, () => executionConfig({ observationId }));
+      const data = await this.readConfig(observationId, waits);
       const config = data ? data.executionConfig : null;
       if (!config) continue;
       const sequences = config[SITE[this.site].branch];
@@ -301,6 +305,26 @@ export class ObserveInstance {
       this.outstanding = [];
     }
     return true;
+  }
+
+  /**
+   * The execution-config read, over the instance's socket like Observe's (or HTTP), timed as
+   * the ExecutionConfig blocking point either way.
+   *
+   * @param {string} observationId
+   * @param {Waits} waits
+   */
+  readConfig(observationId, waits) {
+    const operation = executionConfig({ observationId });
+    if (CONFIG_TRANSPORT === "ws") {
+      return waits.measure("ExecutionConfig", () => this.socket.query(operation));
+    }
+    return this.blocking("ExecutionConfig", waits, () => operation);
+  }
+
+  /** Close the instance's socket; a VU that is done with it. */
+  close() {
+    this.socket.close();
   }
 
   /** The step Observe would run next: the acquisition atom's head while acquiring, else science. */
