@@ -88,6 +88,13 @@ SUITE=load STAGE_1=30s STAGE_2=30s STAGE_3=1m STAGE_4=10s VUS_LOW=5 VUS_HIGH=10 
   SEED_PROGRAMS_MIN=1 SEED_PROGRAMS_MAX=2 npm run k6:load
 ```
 
+On AWS, unattended, from this laptop — every prompt of the wizard answered from the
+environment, the pair stopped at the end or on any failure, the run logged to `out/`:
+
+```bash
+AUTO=1 RUN_EXECUTION=1 RUN_LOAD=0 TEARDOWN=stop loadtest/aws-first-run.sh
+```
+
 Observe execution on its own — N Observe instances executing seeded GMOS observations as the
 service identity, reporting the step ODB overhead and its breakdown by blocking point
 (`k6/lib/execution.js`, [ticket 021](wayfinder/tickets/021-observe-execution-vus-and-seed.md)):

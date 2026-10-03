@@ -31,7 +31,7 @@ SKIPPED=()        # things we couldn't do (e.g. gh missing)
 # _clear — wipe the terminal so only the current step is on screen. No-op when
 # output isn't a terminal, so piped logs stay readable.
 _clear() {
-  [[ -t 1 ]] || return 0
+  [[ -t 1 && -z "${AUTO:-}" ]] || return 0
   if command -v tput >/dev/null 2>&1; then tput clear; else printf '\033[2J\033[3J\033[H'; fi
 }
 
@@ -76,13 +76,25 @@ open_url() {
 
 # pause "msg" — wait for the human to confirm they've done the manual part.
 pause() {
+  if [[ -n "${AUTO:-}" ]]; then
+    printf '  %s%s%s\n' "$DIM" "${1:-—}" "$RESET"
+    return 0
+  fi
   printf '  %s%s%s ' "$DIM" "${1:-Press Enter to continue}" "$RESET"
   read -r _ || true
 }
 
-# confirm "question" — y/N gate; returns success on yes.
+# confirm "question" [VAR] [auto-default] — y/N gate; returns success on yes. Under AUTO the
+# answer is $VAR when given (y/1/true = yes), else the auto-default (n unless stated).
 confirm() {
-  local reply=""
+  local reply="" var="${2:-}" fallback="${3:-n}"
+  if [[ -n "${AUTO:-}" ]]; then
+    reply="$fallback"
+    if [[ -n "$var" && -n "${!var:-}" ]]; then reply="${!var}"; fi
+    printf '  %s? %s%s → %s %s(AUTO%s)%s\n' "$YELLOW" "$1" "$RESET" "$reply" "$DIM" "${var:+, $var}" "$RESET"
+    [[ "$reply" =~ ^([Yy]|1|true) ]]
+    return
+  fi
   printf '  %s? %s [y/N] ' "$YELLOW" "$1"
   read -r reply || true
   [[ "$reply" =~ ^[Yy] ]]
@@ -100,6 +112,15 @@ _existing() {
 ask() {
   local key="$1" prompt="$2" current input
   current=$(_existing "$key" || true)
+  if [[ -n "${AUTO:-}" ]]; then
+    # An environment variable of the same name overrides; else the saved value; else the
+    # caller's default applies to an empty answer.
+    input="${!key:-}"
+    [[ -n "$input" ]] || input="$current"
+    printf '  %s%s%s → %s %s(AUTO)%s\n' "$BOLD" "$prompt" "$RESET" "${input:-<default>}" "$DIM" "$RESET"
+    printf -v "$key" '%s' "$input"
+    return 0
+  fi
   if [[ -n "$current" ]]; then
     printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
   else
@@ -114,6 +135,14 @@ ask() {
 ask_secret() {
   local key="$1" prompt="$2" current input
   current=$(_existing "$key" || true)
+  if [[ -n "${AUTO:-}" ]]; then
+    input="${!key:-}"
+    [[ -n "$input" ]] || input="$current"
+    [[ -n "$input" ]] || { warn "AUTO: $key is not set and nothing is saved for it"; exit 1; }
+    printf '  %s%s%s → %s(AUTO, from the environment)%s\n' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
+    printf -v "$key" '%s' "$input"
+    return 0
+  fi
   if [[ -n "$current" ]]; then
     printf '  %s%s%s %s[Enter keeps current]%s ' "$BOLD" "$prompt" "$RESET" "$DIM" "$RESET"
   else
@@ -185,7 +214,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 
-TOTAL_STAGES=10
+TOTAL_STAGES=11
 
 # The compose stack on one EC2 instance, driven by k6 from a second one, by hand
 # (research/aws-load-target-options.md phase 2) — under NOIRLab's launch procedure for the
@@ -281,6 +310,43 @@ wait_for_ssm() {
   warn "$id never came Online in SSM (last status: $status)"
   exit 1
 }
+
+# ── AUTO mode ─────────────────────────────────────────────────────────────
+# AUTO=1 runs the whole thing unattended: no prompt waits, every answer comes from the
+# environment, and the run is logged to out/. This is the body of the workflow-driven run
+# ticket 016 is waiting on; until IT grants CI an identity it starts from a laptop.
+#
+#   AUTO=1 RUN_EXECUTION=1 RUN_LOAD=0 TEARDOWN=stop loadtest/aws-first-run.sh
+#
+#   RUN_EXECUTION / RUN_LOAD        y|1|true runs that stage; unset skips it
+#   TEARDOWN                        stop (default) | terminate | leave
+#   CONTINUE_WITHOUT_GRAFANA        default y: a rejected push does not end the run
+#   CONTINUE_AFTER_FAILURE          default n: a red regression suite ends the run
+#   EXEC_MINUTES, OBSERVE_INSTANCES, STEP_SECONDS_MIN/MAX, EXECUTION_OBSERVATIONS as in stage 8
+#   HEROKU_API_KEY                  required (the repo's .env, loaded by direnv, is the place)
+#   any `ask` value (AWS_PROFILE, TARGET_TYPE, …) by the same name; else the saved value
+#
+# A failure must not leave two instances billing until the safety stop when nobody is
+# watching, so any non-zero exit stops the pair unless TEARDOWN=leave.
+if [[ -n "${AUTO:-}" ]]; then
+  AUTO_LOG="out/aws-run-$(date -u +%Y%m%dT%H%M%SZ).log"
+  exec > >(tee -a "$AUTO_LOG") 2>&1
+  [[ -n "${HEROKU_API_KEY:-}" ]] || { warn "AUTO needs HEROKU_API_KEY in the environment"; exit 1; }
+  auto_cleanup() {
+    local rc=$?
+    [[ $rc -ne 0 ]] || return 0
+    if [[ -n "${TARGET_ID:-}" && -n "${GEN_ID:-}" && "${TEARDOWN:-stop}" != "leave" ]]; then
+      warn "AUTO: exiting with status $rc — stopping $TARGET_ID and $GEN_ID"
+      if owned_or_die "$TARGET_ID" "$GEN_ID"; then
+        awsx ec2 stop-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null && say "both stopping"
+      fi
+    fi
+    note "AUTO: log at $AUTO_LOG"
+  }
+  trap auto_cleanup EXIT
+  trap 'exit 130' INT TERM
+  say "AUTO mode: no prompts; everything below is also in $AUTO_LOG"
+fi
 
 banner "GPP load test on AWS — NOIRLab us-west-2"
 
@@ -426,7 +492,7 @@ say "waiting for both to register with SSM"
 wait_for_ssm "$TARGET_ID"
 wait_for_ssm "$GEN_ID"
 say "target $TARGET_ID (private $TARGET_PRIVATE_IP) · generator $GEN_ID — both Online in SSM"
-warn "both are billing from now until stage 10 (or the ${MAX_HOURS}h safety stop)."
+warn "both are billing from now until stage 11 (or the ${MAX_HOURS}h safety stop)."
 pause
 
 # ── Stage 4 ───────────────────────────────────────────────────────────────
@@ -594,7 +660,7 @@ K6_PROMETHEUS_RW_TREND_STATS='avg,p(95),p(99)'"
   else
     warn "Grafana rejected the credentials (see above); the runs below will not stream"
     GRAFANA_ENV=""
-    confirm "Carry on without Grafana?" || { say "Stopping here — nothing torn down."; exit 1; }
+    confirm "Carry on without Grafana?" CONTINUE_WITHOUT_GRAFANA y || { say "Stopping here — nothing torn down."; exit 1; }
   fi
 fi
 
@@ -617,27 +683,80 @@ say "k6/regression.js, as the nightly runs it: the guest scenarios, then one"
 say "observation per observing mode as the fabricated PI (ticket 030). A few minutes."
 printf '\n'
 
+# The execution VU (ticket 021) impersonates Observe with the stack's service JWT, which
+# bootstrap wrote on the target. Streamed target → laptop → generator like the PI file.
+ssh_to "$TARGET_ID" "grep '^export ODB_SERVICE_JWT=' ~/gpp-tests/stack/.env.generated" \
+  | ssh_to "$GEN_ID" "umask 077 && cat > ~/gpp-tests/stack/.env.service"
+say "the service JWT is on the generator"
+
 # Output goes to a file first and is printed after: a `| tee` would report tee's exit code,
 # and the remote shell is dash, which has no pipefail.
-if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && set +a && \
+if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.standard-users && . stack/.env.service && set +a && \
   $GRAFANA_ENV SUITE=regression k6 run $GRAFANA_ARGS --summary-export out/k6-regression-summary.json k6/regression.js \
   > out/k6-regression.log 2>&1; rc=\$?; cat out/k6-regression.log; exit \$rc"; then
   say ""
   say "regression green on AWS"
 else
-  warn "the regression suite failed — its log is collected in stage 9"
-  confirm "Carry on to the load profile anyway?" || { say "Stopping here — nothing torn down."; exit 1; }
+  warn "the regression suite failed — its log is collected in stage 10"
+  confirm "Carry on to the load profile anyway?" CONTINUE_AFTER_FAILURE n || { say "Stopping here — nothing torn down."; exit 1; }
 fi
 pause
 
 # ── Stage 8 ───────────────────────────────────────────────────────────────
+stage "Observe execution — Observe instances executing sequences, ~20 minutes"
+say "k6/execution.js (ticket 021): each VU is one Observe server instance on the"
+say "service JWT, executing seeded GMOS observations at a compressed cadence and"
+say "reporting the step ODB overhead. The odb's container memory is sampled on the"
+say "target throughout: locally it climbed to its limit under this traffic, and"
+say "this run is what settles whether that was emulation or the odb."
+printf '\n'
+
+RAN_EXEC=""
+EXEC_MINUTES="${EXEC_MINUTES:-20}"
+EXEC_INSTANCES="${OBSERVE_INSTANCES:-2}"
+note "Enter skips this stage (the prompt is y/N) — type y to run it."
+if confirm "Run the execution profile now ($EXEC_INSTANCES instances, $EXEC_MINUTES minutes)?" RUN_EXECUTION n; then
+  say "re-arming the safety stop on both instances: $((EXEC_MINUTES + 60)) minutes from now"
+  for id in "$TARGET_ID" "$GEN_ID"; do
+    ssh_to "$id" "sudo shutdown -c 2>/dev/null; sudo shutdown -P +$((EXEC_MINUTES + 60))" >/dev/null 2>&1 \
+      || warn "could not re-arm the safety stop on $id — watch its uptime"
+  done
+
+  # Container memory and CPU every 30 s for the run's length plus a margin, detached on the
+  # target, ending by itself. One line per sample: time, then name/mem/cpu per container.
+  ssh_to "$TARGET_ID" "mkdir -p ~/gpp-tests/out && nohup timeout $((EXEC_MINUTES * 60 + 240)) sh -c \
+    'while true; do echo \"\$(date -u +%FT%TZ) \$(sudo docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\" | tr \"\\n\" \";\")\"; sleep 30; done' \
+    < /dev/null > ~/gpp-tests/out/odb-stats.log 2>&1 & sleep 1" || warn "could not start the memory sampler on the target"
+  say "sampling container memory on the target every 30 s"
+
+  # Detached like the load profile; the service JWT is read on the generator from the file
+  # streamed in stage 7, never passed on a command line.
+  ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup sh -c 'set -a; . stack/.env.service; set +a; exec env $K6_ENV $GRAFANA_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    OBSERVE_INSTANCES=$EXEC_INSTANCES STEP_SECONDS_MIN=${STEP_SECONDS_MIN:-5} STEP_SECONDS_MAX=${STEP_SECONDS_MAX:-10} \
+    DURATION=${EXEC_MINUTES}m EXECUTION_OBSERVATIONS=${EXECUTION_OBSERVATIONS:-4} \
+    k6 run $GRAFANA_ARGS --summary-export out/k6-execution-summary.json k6/execution.js' \
+    < /dev/null > out/k6-execution.log 2>&1 & sleep 5" || true
+  say "running detached on the generator; following the log."
+  note "Ctrl-C stops the tail, not the run. Re-attach with:"
+  note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+  note "    then: tail -f ~ubuntu/gpp-tests/out/k6-execution.log"
+  printf '\n'
+  ssh_to "$GEN_ID" "tail -f --pid=\$(pgrep -x k6 | head -1) gpp-tests/out/k6-execution.log" || true
+  RAN_EXEC=1
+  pause "Run finished — press Enter to continue"
+else
+  say "skipped the execution profile"
+fi
+
+# ── Stage 9 ───────────────────────────────────────────────────────────────
 stage "The full load profile — 0→50→200 VUs, ~40 minutes"
 say "OTEL_ENVIRONMENT=aws-loadtest tags the summary as its own environment, so"
 say "these numbers never blend into a Heroku baseline."
 printf '\n'
 
 RAN_LOAD=""
-if confirm "Run the 40-minute load profile now?"; then
+if confirm "Run the 40-minute load profile now?" RUN_LOAD n; then
   # The first-boot safety stop (stage 3) counts from launch, not from this stage. On
   # 2026-10-02 a 3-hour stop was minutes from firing 17 minutes into the profile — so push it
   # out to 90 minutes from now on both instances (load profile + collect + teardown).
@@ -670,12 +789,43 @@ else
   say "skipped the load profile"
 fi
 
-# ── Stage 9 ───────────────────────────────────────────────────────────────
+# ── Stage 10 ──────────────────────────────────────────────────────────────
 stage "Collect the numbers"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression-summary.json" "out/k6-aws-regression-$STAMP.json" 2>/dev/null \
   && say "saved out/k6-aws-regression-$STAMP.json" || warn "no regression summary to collect"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression.log" "out/k6-aws-regression-$STAMP.log" 2>/dev/null || true
+
+if [[ -n "$RAN_EXEC" ]]; then
+  scp_from "$GEN_ID" "gpp-tests/out/k6-execution-summary.json" "out/k6-aws-execution-$STAMP.json" 2>/dev/null \
+    && say "saved out/k6-aws-execution-$STAMP.json" || warn "no execution summary to collect"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-execution.log" "out/k6-aws-execution-$STAMP.log" 2>/dev/null || true
+  scp_from "$TARGET_ID" "gpp-tests/out/odb-stats.log" "out/odb-stats-aws-$STAMP.log" 2>/dev/null \
+    && say "saved out/odb-stats-aws-$STAMP.log" || warn "no memory samples to collect"
+  printf '\n'
+
+  node --input-type=commonjs -e '
+  const fs = require("fs");
+  const s = require("./out/k6-aws-execution-'"$STAMP"'.json");
+  const m = s.metrics ?? {};
+  const p = (k, q) => m[k]?.[q]?.toFixed(0) ?? "—";
+  console.log("  steps executed     :", m.gpp_execution_steps?.count ?? "—");
+  console.log("  step overhead      : p95", p("odb_step_overhead", "p(95)"), "ms · p99", p("odb_step_overhead", "p(99)"), "ms");
+  for (const point of ["RecordVisit", "StepRecorded", "RecordDataset", "Flush", "ExecutionConfig"]) {
+    console.log("    " + point.padEnd(17) + ": p95", p("odb_step_wait{operation:" + point + "}", "p(95)"), "ms");
+  }
+  console.log("  checks             :", ((m.checks?.value ?? 0) * 100).toFixed(2) + "%");
+  console.log("  graphql errors     :", m.odb_graphql_errors?.count ?? 0);
+  try {
+    const lines = fs.readFileSync("./out/odb-stats-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
+    const odb = lines.map((l) => l.split(";").find((c) => c.includes("odb-1")) ?? "").map((c) => c.trim().split(" ")[1]).filter(Boolean);
+    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+  } catch (_e) { console.log("  odb memory         : no samples"); }
+  ' || warn "could not summarise the execution run — the raw JSON is in out/"
+  printf '\n'
+  note "A flat odb memory line closes the ticket 021 watch item; a steady climb is a"
+  note "finding for the odb team before any surge run. The samples are in the stats log."
+fi
 
 if [[ -n "$RAN_LOAD" ]]; then
   scp_from "$GEN_ID" "gpp-tests/out/k6-summary.json" "out/k6-aws-$STAMP.json"
@@ -704,7 +854,7 @@ if [[ -n "$RAN_LOAD" ]]; then
 fi
 pause
 
-# ── Stage 10 ──────────────────────────────────────────────────────────────
+# ── Stage 11 ──────────────────────────────────────────────────────────────
 stage "Tear down — the stage that decides the bill"
 owned_or_die "$TARGET_ID" "$GEN_ID"
 warn "Two instances are still running: $TARGET_ID and $GEN_ID"
@@ -718,7 +868,7 @@ ask TEARDOWN "stop / terminate / leave [stop]:"
 
 case "$TEARDOWN" in
   terminate)
-    if confirm "Terminate both instances? The stack and its data are gone for good."; then
+    if confirm "Terminate both instances? The stack and its data are gone for good." CONFIRM_TERMINATE y; then
       awsx ec2 terminate-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null
       say "terminating. The key pair remains for next time."
       # Nothing to reuse, so drop the ids rather than offer them on a re-run.

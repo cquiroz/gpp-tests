@@ -97,6 +97,12 @@ from the gitignored `.env`, proves the push from the generator with `tools/verif
 the smoke stage, and streams smoke, regression and load runs with the same credentials. The
 re-run confirmed metrics arriving in Grafana Cloud. Both instances are stopped between runs.
 
+**AUTO mode (2026-10-03).** The wizard runs unattended with `AUTO=1`: every prompt answers
+from the environment (`RUN_EXECUTION`, `RUN_LOAD`, `TEARDOWN`, the `ask` values by name),
+the run is logged to `out/aws-run-<stamp>.log`, and any non-zero exit stops the pair. Stage 8
+runs the execution profile and samples the odb's memory on the target. This is the body of
+the eventual workflow job: once IT grants an identity, the workflow calls the same script.
+
 **Where this leaves the ticket (2026-10-02):** the manual path is proven under the procedure, so
 the surge work (021, 022) proceeds locally and boots AWS through the wizard when it needs real
 numbers. The automation half waits on IT: a GitHub OIDC role for the repository scoped by the
