@@ -90,12 +90,21 @@ Selections follow Explore's subqueries, trimmed where they would dwarf the event
   out while the odb sat at 1.97 GiB of 2 GiB. Execution with socket reads, 2 instances at 3–5 s
   per step for 100 s: 45 steps, 0 errors, config read p95 252 ms, step overhead p95 959 ms.
   Regression suite: 97/97 checks, 9/9 scenarios.
-- **Provisional subscription SLO** for ticket 023: event latency from send p95 < 1 s, round
-  trip from ack p95 < 500 ms, zero unanswered pings, reconnects explained. Replace with the
-  AWS figures after the next `loadtest/aws-run.sh`.
+- **First native run (AWS, 2026-10-04 00:08–00:18 UTC, `m7i.4xlarge` target, `c7i.2xlarge`
+  generator):** 50 steady subscribers (Explore-tab and Observe-browser halves, 120 s sessions)
+  plus 10 churning, 10 minutes. 275 sockets opened, 5,207 websocket messages, 1,091 HTTP edits,
+  0 reconnects, 0 unanswered pings, 0 lost events, 100 % checks, 0 GraphQL errors. Ping p95
+  2 ms both shapes. Round trip from the HTTP acknowledgement p95 11 ms (Explore) and 2 ms
+  (Observe); event latency from the send p95 78 ms (Explore) and 63 ms (Observe), max 136 ms.
+  The odb's memory was flat through it (10.22 → 10.38 GiB) after the execution stage had walked
+  the heap from 4.4 to 10.4 GiB: subscriptions and edits barely touch new heap. The four k6
+  warnings in the log are timers of churn VUs cut off at the run's end, not faults.
+- **Provisional subscription SLO** for ticket 023, from the native figures with room for the
+  surge's other traffic: event latency from send p95 < 500 ms, round trip from ack p95 < 250 ms,
+  zero unanswered pings, zero lost events, reconnects zero or explained.
 - **Cross-VU fan-out**, still out of scope, now has a design: every edit already stamps the
   subtitle with the VU id and a timestamp, and all VUs share one k6 clock, so a collector VU
   subscribing to `observationEdit` across the subscriber programs could time any other VU's
   edit from the stamp in the payload. No external store needed; a follow-up ticket.
-- **Not done:** the wizard has no subscribers stage yet (noted in ticket 016); run it by hand
-  on the generator or add a stage when the surge profile (018) composes the three populations.
+- **Wizard:** stage 9 runs the subscribers on AWS (ticket 016); `loadtest/aws-run.sh` includes
+  them by default.

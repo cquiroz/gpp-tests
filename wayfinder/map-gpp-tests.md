@@ -135,9 +135,10 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
 
 ## Not yet specified
 
-- **Subscription round-trip SLO** — provisional from 022's local run: event latency from the
-  mutation's send p95 < 1 s, round trip from its acknowledgement p95 < 500 ms, zero unanswered
-  pings. To be replaced by the AWS figures from the next unattended run (023 owns the file).
+- **Subscription round-trip SLO** — provisional from 022's first native run (2026-10-04: 60
+  subscribers, event latency p95 78 ms, round trip p95 11 ms, ping p95 2 ms, nothing lost):
+  event latency from the mutation's send p95 < 500 ms, round trip from its acknowledgement
+  p95 < 250 ms, zero unanswered pings, zero lost events. 023 owns the file.
 - **Attachment upload leg of the surge model** — sizes and count per submission, once 028
   gives the stack somewhere to upload.
 - **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers. 022 left a

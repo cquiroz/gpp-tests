@@ -127,6 +127,11 @@ on the generator (50 steady + 10 churning for 10 minutes by default, `RUN_SUBSCR
 stats file, and the collect stage prints sockets, reconnects, unanswered pings, lost events, ping
 and round-trip p95 per shape. `loadtest/aws-run.sh` includes it by default (`--no-subscribers`).
 
+**Fourth run (2026-10-03/04, the full standard run, ~55 minutes unattended):** regression
+green, execution 310 steps with 0 errors (overhead p95 587 ms), subscribers 275 sockets with
+nothing lost (numbers in ticket 022), odb memory 4.4 → 10.4 GiB during execution under the
+new 15.7 GiB heap cap and flat during the subscribers. Grafana streamed. Pair stopped.
+
 **Where this leaves the ticket (2026-10-02):** the manual path is proven under the procedure, so
 the surge work (021, 022) proceeds locally and boots AWS through the wizard when it needs real
 numbers. The automation half waits on IT: a GitHub OIDC role for the repository scoped by the
