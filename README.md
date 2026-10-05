@@ -26,7 +26,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model), `execution.js` (Observe instances executing sequences, ticket 021) and `subscribers.js` (held websockets with churn, ticket 022), plus their libs, including the graphql-transport-ws client. |
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
-| `loadtest/` | Provisioning for the persistent Heroku load target ([README](loadtest/README.md)). |
+| `loadtest/` | The AWS load target: `aws-run.sh` (the standard unattended run), `aws-first-run.sh` (the wizard behind it), `guard.sh`; plus the deferred Heroku design ([README](loadtest/README.md)). |
 | `.github/` | `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
 | `ARCHITECTURE.md` | The high-level picture: suites, hosts, how they interact and where each runs, with diagrams. Start here. |
 | `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. Includes the [AWS load-target design note](research/aws-load-target-options.md). |
@@ -133,10 +133,12 @@ SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscriber
   k6 regression pass nightly on
   [cquiroz/gpp-tests](https://github.com/cquiroz/gpp-tests/actions). The one red night so far
   (2026-09-07) was the odb changing a rule under the suite, caught within a day.
-- **Load target: AWS, proven, manual boot.** The 200-VU profile runs on NOIRLab's shared AWS
-  account under IT's us-west-2 launch procedure (`loadtest/aws-first-run.sh`): 2026-10-02,
-  p95 168 ms, 0 errors, metrics streaming to Grafana Cloud. The pair is stopped between runs.
-  Workflow-driven boot waits on IT granting CI an identity
+- **Load target: AWS, one command, unattended.** `loadtest/aws-run.sh` boots the pair on
+  NOIRLab's shared account under IT's us-west-2 procedure, runs the regression suite, 20 minutes
+  of Observe execution and 10 minutes of websocket subscribers, collects the numbers and stops
+  the pair, in about 55 minutes with nothing to type. Native figures so far: 200-VU profile
+  p95 168 ms; execution step ODB overhead p95 ~600 ms; subscription event latency p95 78 ms;
+  all with 0 errors. A workflow-driven run waits on IT granting CI an identity
   ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)); `performance.yml` still
   exits green with a notice until the `LOADTEST_*` repository variables exist.
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the

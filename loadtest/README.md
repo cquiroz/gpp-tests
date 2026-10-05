@@ -1,10 +1,21 @@
-# The load target (Heroku shape — not provisioned)
+# The load target
 
-> **Status, 2026-09-15.** None of this exists yet: the `lucuma-*-loadtest` apps were never
-> created, `performance.yml` exits with a notice every morning, and the cost figures below are
-> estimates for when it does. The surge work iterates on a self-hosted **AWS** target instead
-> ([ticket 016](../wayfinder/tickets/016-automate-aws-load-target.md),
-> [aws-nightly-automation.md](../research/aws-nightly-automation.md)); this Heroku shape is
+> **Status, 2026-10-05.** The load target that exists is on **AWS**, in NOIRLab's shared
+> account under IT's us-west-2 launch procedure, and it runs from this directory:
+>
+> - `aws-run.sh` — the standard unattended run: boot the pair, regression suite, 20 minutes of
+>   Observe execution, 10 minutes of websocket subscribers, collect, stop (`--help` for the
+>   options; `--load` adds the 40-minute 200-VU trend profile).
+> - `aws-first-run.sh` — the wizard behind it; interactive without `AUTO=1`.
+> - `guard.sh` — the name-based safety rail the Heroku scripts share.
+>
+> How it works and what IT allows: [ticket 016](../wayfinder/tickets/016-automate-aws-load-target.md),
+> [`ARCHITECTURE.md`](../ARCHITECTURE.md) "Where it runs: the AWS load target",
+> [aws-load-target-options.md](../research/aws-load-target-options.md).
+>
+> **The rest of this file is the deferred Heroku shape.** The `lucuma-*-loadtest` apps were
+> never created, `performance.yml` exits with a notice every morning, and the cost figures
+> below are estimates for when it does. The Heroku shape is
 > deferred to the production-shaped capacity run
 > ([ticket 026](../wayfinder/tickets/026-provision-production-shaped-heroku-target.md)), once
 > production sizing has been read ([027](../wayfinder/tickets/027-read-production-sizing.md)).

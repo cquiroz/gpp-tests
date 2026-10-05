@@ -1,6 +1,10 @@
 # Running the nightly load suite on AWS (M4 on EC2 — proposed)
 
-**Written:** 2026-08-27. **Status:** design note, nothing built. Phase 3 of
+**Written:** 2026-08-27. **Status, 2026-10-05:** the run itself is built and unattended
+(`loadtest/aws-run.sh`, AUTO mode of the wizard: boot, regression, execution, subscribers,
+collect, stop, from a laptop); what remains of this note is the CI trigger, which waits on IT
+granting an identity (OIDC role or in-VPC runner, ticket 016). The account also changed to
+NOIRLab's shared one, so §3's OIDC design is IT's to grant rather than ours to create. Phase 3 of
 [AWS load-target options](aws-load-target-options.md), which covers *whether* to run on AWS
 and how a manual run works; this covers *automating* it as the nightly job. Read alongside
 [the load-target README](../loadtest/README.md) (the Heroku design this replaces) and

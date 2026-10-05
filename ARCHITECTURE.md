@@ -18,9 +18,11 @@ Three suites, two claims:
 - **Browser suite** (Playwright) drives Explore through its `data-testid` contract: the v1
   scenarios, the proposal flow, an observation in every observing mode.
 - **k6 regression suite** runs the same scenarios at the GraphQL layer once per night, as a
-  guest and as a fabricated PI, plus one executed step as Observe's service identity.
+  guest and as a fabricated PI, plus one executed step as Observe's service identity and one
+  Observe-browser websocket session.
 - **k6 load suites** make the performance claims. The **trend run** (200 guest VUs) says
-  "tonight is slower than last night". The **surge run** (on demand, being built) says "under
+  "tonight is slower than last night". The **surge run** (on demand; its populations exist, the
+  composed profile is ticket 018) says "under
   end-of-CfP load, with both telescopes executing through Observe, the odb keeps execution
   within its stall budget, proposal submission usable and regular operations within spec".
 
@@ -33,11 +35,11 @@ against a dedicated target on AWS, with k6 on a second instance beside it.
 |---|---|---|---|
 | Shared library | `lib/` | Every GraphQL document and payload (`odb-operations.js`, validated offline against the vendored odb schema), endpoints, the metric-label budget, the scenario parity catalog, run identity, threshold calibration | Imported by every suite; pure JavaScript, no dependencies |
 | Browser suite | `tests/` | Playwright journeys against Explore; selectors only through Explore's `data-testid` contract | GitHub runner, nightly |
-| k6 regression | `k6/regression.js` | The same scenarios at the GraphQL layer, 14 observing modes, one Observe step | GitHub runner, nightly, after the browser suite |
-| k6 load | `k6/load.js`, `k6/execution.js` | The 200-VU trend profile; Observe execution instances; the surge profile to come | AWS generator instance, on demand |
+| k6 regression | `k6/regression.js` | The same scenarios at the GraphQL layer, 14 observing modes, one Observe step, one websocket session | GitHub runner, nightly, after the browser suite |
+| k6 load | `k6/load.js`, `k6/execution.js`, `k6/subscribers.js` | The 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; the composed surge profile to come (018) | AWS generator instance, on demand |
 | Ephemeral stack | `stack/` | Compose file, Caddy, bootstrap scripts: boots the seven services from empty, mints keys and the service JWT, fabricates standard users | Inside the GitHub runner; locally; on the AWS target |
 | Tools and CI | `tools/`, `.github/` | Replay operations at boot, compute thresholds from the ledger, write run summaries, post Grafana annotations; `regression.yml`, `performance.yml` | GitHub Actions |
-| AWS wizard | `loadtest/aws-first-run.sh` | Human-driven boot of the load target under NOIRLab's launch procedure | Operator's laptop, over SSM |
+| AWS runner | `loadtest/aws-run.sh`, `loadtest/aws-first-run.sh` | The standard unattended run (regression, execution, subscribers, stop) and the wizard behind it, interactive when wanted, under NOIRLab's launch procedure | Operator's laptop, over SSM |
 
 ## Where it runs: the regression path
 
@@ -97,13 +99,15 @@ the suites log in as.
 The load suites need hardware with headroom and a network without jitter, so both the stack
 and k6 run on EC2 in NOIRLab's shared AWS account, in `us-west-2`, under IT's launch
 procedure: launched only through the `NOIRLab-Software-GPP` launch template, in a private
-subnet with no public IP, reachable only over SSM. Today an operator boots it with the wizard;
-a workflow-driven boot waits on IT granting CI an identity ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)).
+subnet with no public IP, reachable only over SSM. Today one command from a laptop runs it
+unattended (`loadtest/aws-run.sh`: boot, regression, execution, subscribers, collect, stop); a
+workflow-driven run waits on IT granting CI an identity ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md))
+and will call the same script.
 
 ```mermaid
 flowchart LR
   subgraph laptop["Operator's laptop"]
-    wizard["loadtest/aws-first-run.sh<br/>launch · sync · boot · run · stop"]
+    wizard["loadtest/aws-run.sh → aws-first-run.sh<br/>launch · sync · boot · run · collect · stop"]
   end
   subgraph aws["NOIRLab AWS account · us-west-2"]
     subgraph vpc["nl-vpc private subnet · no public IPs"]
@@ -133,8 +137,8 @@ flowchart LR
 Both instances sit in one availability zone and are stopped between runs. The generator is a
 separate box because k6 on the target would share the CPU it is measuring, and k6 on a
 hosted GitHub runner would add internet latency to every sample. Results come back two ways:
-k6 streams metrics to Grafana Cloud during the run, and the wizard copies the k6 summary
-back over SSM. The only things that can be stopped or terminated by the tooling are instances
+k6 streams metrics to Grafana Cloud during the run, and the wizard copies the k6 summaries,
+logs and the target's container-memory samples back over SSM into `out/`. The only things that can be stopped or terminated by the tooling are instances
 tagged `gpp-tests:loadtest=1`, and the wizard re-checks that tag before every such call.
 
 ## How traffic flows: the virtual users
@@ -263,8 +267,11 @@ flowchart LR
 | Why stress testing first, in one repo | [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md) |
 | How the AWS target works and what IT allows | [ticket 016](wayfinder/tickets/016-automate-aws-load-target.md), [`research/aws-load-target-options.md`](research/aws-load-target-options.md) |
 | The execution model and its first numbers | [ticket 021](wayfinder/tickets/021-observe-execution-vus-and-seed.md) |
+| The websocket client, the subscriber shapes and their first numbers | [ticket 022](wayfinder/tickets/022-graphql-ws-client-and-subscriber-vus.md) |
+| Why the odb's memory grows to its limit, and the heap cap | [`research/odb-memory-growth-handoff.md`](research/odb-memory-growth-handoff.md) |
 | Domain vocabulary | [`CONTEXT.md`](CONTEXT.md) |
 
-Next on the frontier: the `graphql-transport-ws` client and subscriber VUs (022), the object
-store the proposal loop needs (028), standard users and proposals in k6 (017), then the surge
-profile and its SLO file (018, 023). In parallel, IT's answer on a CI identity for AWS (016).
+Next on the frontier: the object store the proposal loop needs (028), standard users and
+proposals in k6 (017), then the surge profile that composes execution, subscribers and
+proposals over the regular mix, and its SLO file (018, 023). In parallel, IT's answer on a CI
+identity for AWS (016).
