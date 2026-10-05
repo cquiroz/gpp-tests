@@ -360,6 +360,10 @@ if [[ -n "${AUTO:-}" ]]; then
         awsx ec2 stop-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null && say "both stopping"
       fi
     fi
+    if [[ -n "${S3_BUCKET:-}" && -n "${S3_PREFIX:-}" && -z "${KEEP_ATTACHMENTS:-}" ]]; then
+      awsx s3 rm --recursive --quiet "s3://$S3_BUCKET/$S3_PREFIX/" >/dev/null 2>&1 \
+        && say "AUTO: deleted this run's attachments under s3://$S3_BUCKET/$S3_PREFIX"
+    fi
     note "AUTO: log at $AUTO_LOG"
   }
   trap auto_cleanup EXIT
@@ -411,6 +415,19 @@ note "  This wizard launches only through the GPP launch template, and only ever
 note "  starts, stops or terminates instances it launched and tagged $TAG_KEY=$TAG_VALUE."
 write_env AWS_REGION "$AWS_REGION"
 write_env AWS_PROFILE "$AWS_PROFILE"
+
+# The object store (ticket 028): the stack on the target writes proposal attachments to the
+# real bucket through its re-signing proxy, under a prefix of this run's own, which the
+# teardown stage deletes. The proxy uses the instance role; this check only confirms the
+# bucket is visible from here, which is what the cleanup needs.
+S3_BUCKET="${S3_BUCKET:-noirlab-gpp-tests}"
+S3_PREFIX="gpp-tests/aws-$(date -u +%Y%m%dT%H%M%SZ)"
+if awsx s3api head-bucket --bucket "$S3_BUCKET" >/dev/null 2>&1; then
+  say "bucket:   s3://$S3_BUCKET/$S3_PREFIX  (this run's attachments; deleted at teardown)"
+else
+  warn "cannot see s3://$S3_BUCKET from this profile — the stack will use its own object store (S3_MODE=local)"
+  S3_BUCKET=""
+fi
 pause
 
 # ── Stage 2 ───────────────────────────────────────────────────────────────
@@ -581,8 +598,16 @@ say "  odb $(pct 40) (heap ${ODB_HEAP_MIB}m)  itc $(pct 10)  obscalc $(pct 8)  c
 note "  Caps rather than reservations. Override any of them in the environment; a target that"
 note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
 
+# Attachments go to the real bucket when the preflight could see it (S3_MODE=bucket boots
+# the re-signing proxy, which signs with the instance role), else to the stack's own store.
+S3_ENV="S3_MODE=local"
+if [[ -n "$S3_BUCKET" ]]; then
+  S3_ENV="S3_MODE=bucket S3_BUCKET=$S3_BUCKET S3_PREFIX=$S3_PREFIX S3_REGION=$AWS_REGION"
+  say "attachments: s3://$S3_BUCKET/$S3_PREFIX through the proxy and the instance role"
+fi
+
 say "booting the stack"
-ssh_to "$TARGET_ID" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
+ssh_to "$TARGET_ID" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS $S3_ENV bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
 say ""
 say "the stack is up, its readiness checks passed, and the standard users are fabricated"
 pause
@@ -624,7 +649,7 @@ REMOTE
 rsync_to "$GEN_ID"
 
 ssh_to "$GEN_ID" "sudo sed -i '/gpp-test.internal/d' /etc/hosts && \
-  echo '$TARGET_PRIVATE_IP odb.gpp-test.internal sso.gpp-test.internal itc.gpp-test.internal explore.gpp-test.internal prefs.gpp-test.internal' \
+  echo '$TARGET_PRIVATE_IP odb.gpp-test.internal sso.gpp-test.internal itc.gpp-test.internal explore.gpp-test.internal prefs.gpp-test.internal mail.gpp-test.internal' \
   | sudo tee -a /etc/hosts >/dev/null"
 say "generator resolves the stack at $TARGET_PRIVATE_IP"
 
@@ -894,6 +919,13 @@ scp_from "$GEN_ID" "gpp-tests/out/k6-regression-summary.json" "out/k6-aws-regres
   && say "saved out/k6-aws-regression-$STAMP.json" || warn "no regression summary to collect"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression.log" "out/k6-aws-regression-$STAMP.log" 2>/dev/null || true
 
+if [[ -n "$S3_BUCKET" ]]; then
+  # What the run uploaded: the count and bytes are the surge model's attachment leg (017).
+  say "attachments under s3://$S3_BUCKET/$S3_PREFIX:"
+  awsx s3 ls --recursive --summarize "s3://$S3_BUCKET/$S3_PREFIX/" 2>/dev/null \
+    | grep -E 'Total (Objects|Size)' | sed 's/^ */    /' || say "    none"
+fi
+
 if [[ -n "$RAN_EXEC" ]]; then
   scp_from "$GEN_ID" "gpp-tests/out/k6-execution-summary.json" "out/k6-aws-execution-$STAMP.json" 2>/dev/null \
     && say "saved out/k6-aws-execution-$STAMP.json" || warn "no execution summary to collect"
@@ -990,6 +1022,16 @@ say "  stop      keeps the disks (a few \$/month), boots again in minutes"
 say "  terminate leaves nothing behind at all"
 say "  leave     they keep billing by the hour (until the ${MAX_HOURS}h safety stop)"
 say ""
+# This run's attachments are test junk in a shared bucket; delete them whatever happens to
+# the instances. KEEP_ATTACHMENTS=1 keeps them for a look.
+if [[ -n "${S3_BUCKET:-}" && -z "${KEEP_ATTACHMENTS:-}" ]]; then
+  if awsx s3 rm --recursive --quiet "s3://$S3_BUCKET/$S3_PREFIX/" >/dev/null 2>&1; then
+    say "deleted this run's attachments under s3://$S3_BUCKET/$S3_PREFIX"
+  else
+    warn "could not delete s3://$S3_BUCKET/$S3_PREFIX — remove it by hand"
+  fi
+fi
+
 ask TEARDOWN "stop / terminate / leave [stop]:"
 [[ -n "$TEARDOWN" ]] || TEARDOWN="stop"
 

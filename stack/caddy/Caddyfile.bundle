@@ -49,3 +49,42 @@ prefs.{$GPP_TEST_DOMAIN} {
 	tls internal
 	reverse_proxy http://hasura:8080
 }
+
+# Mailgun's stand-in and the record of outgoing mail — the same blocks as Caddyfile, which
+# explains them (ticket 028). No email can leave the stack.
+api.mailgun.net {
+	tls internal
+
+	log {
+		output file /data/mailgun.log {
+			roll_size 10MiB
+			roll_keep 2
+		}
+		format json
+	}
+	log_append body {http.request.body}
+
+	handle /v3/*/messages {
+		header Content-Type "application/json"
+		respond `{"id":"<{http.request.uuid}@mail.example.com>","message":"Queued. Thank you."}` 200
+	}
+
+	handle /v3/*/events {
+		header Content-Type "application/json"
+		respond `{"items":[],"paging":{}}` 200
+	}
+
+	respond 404
+}
+
+mail.{$GPP_TEST_DOMAIN} {
+	tls internal
+
+	handle /mailgun.log {
+		root * /data
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	respond 404
+}

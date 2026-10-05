@@ -13,6 +13,7 @@ NAMES=(
   "odb.$GPP_TEST_DOMAIN"
   "itc.$GPP_TEST_DOMAIN"
   "prefs.$GPP_TEST_DOMAIN"
+  "mail.$GPP_TEST_DOMAIN"
 )
 
 missing=()

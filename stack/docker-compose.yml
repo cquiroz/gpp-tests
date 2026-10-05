@@ -25,11 +25,18 @@ x-odb-env: &odb-env
   ODB_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
   CORS_OVER_HTTPS: "true"
   EXPLORE_URL: https://explore.${GPP_TEST_DOMAIN:-gpp-test.internal}
-  # Dummy S3/Mailgun values: required to boot, unused by the v1 scenarios (ODB-README).
-  CLOUDCUBE_ACCESS_KEY_ID: gpp-tests
-  CLOUDCUBE_SECRET_ACCESS_KEY: gpp-tests
-  CLOUDCUBE_URL: https://cube.example.com/gpp-tests
+  # Attachments live in S3 (ticket 028). The odb signs with these static keys, path-style,
+  # with its region pinned to us-east-1 and no endpoint setting of its own
+  # (S3FileService.scala); the AWS SDK's own AWS_ENDPOINT_URL_S3 is what points it at the
+  # `s3` service below (S3_MODE=local) or at the re-signing proxy in front of the real
+  # bucket (S3_MODE=bucket). The bucket is the first host label of CLOUDCUBE_URL and its
+  # path is the key prefix; the host itself is never resolved, hence the reserved TLD.
+  CLOUDCUBE_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-gpp-tests}
+  CLOUDCUBE_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-gpp-tests-attachments}
+  CLOUDCUBE_URL: https://${S3_BUCKET:-gpp-tests}.s3.invalid/${S3_PREFIX:-attachments}
+  AWS_ENDPOINT_URL_S3: ${S3_ENDPOINT_URL:-http://s3:7070}
   FILE_UPLOAD_MAX_MB: "10"
+  # Dummy Mailgun values: required to boot, unused (ODB-README).
   MAILGUN_API_KEY: gpp-tests
   MAILGUN_DOMAIN: mail.example.com
   MAILGUN_WEBHOOK_SIGNING_KEY: gpp-tests
@@ -60,6 +67,8 @@ x-odb-env: &odb-env
 #   odb      1.98 / 2.00 GiB   99%      obscalc  0.99 / 1.00 GiB   96%
 #   itc      0.79 / 1.00 GiB   78%      sso      0.54 / 0.75 GiB   70%
 #   postgres 0.58 / 1.00 GiB   57%      hasura   0.16 / 0.50 GiB   31%
+#
+# (The object store added later is a Go binary: ~25 MiB idle under its 128m cap.)
 #
 # A JVM sitting at its ceiling is normal — it grows to MaxRAMPercentage and collects rather
 # than returning memory — but there is little room for non-heap growth, so raise them for
@@ -177,7 +186,13 @@ services:
       # on a 25 GiB load target it leaves the same 1 GiB, and the JVM walks the whole heap, so
       # resident memory climbs to the limit by design. An explicit -Xms/-Xmx here is honoured
       # by the launcher instead of its formula (research/odb-memory-growth-handoff.md).
-      JAVA_OPTS: ${ODB_JAVA_OPTS:-}
+      #
+      # The truststore flags point at the merged store bootstrap builds
+      # (stack/scripts/java-truststore.sh): the image's public CAs plus Caddy's root, so the
+      # odb trusts the stack's stand-in for api.mailgun.net and still reaches Gaia and Simbad.
+      JAVA_OPTS: ${ODB_JAVA_OPTS:-} -Djavax.net.ssl.trustStore=/stack/cacerts -Djavax.net.ssl.trustStorePassword=changeit
+    volumes:
+      - ./certs/cacerts:/stack/cacerts:ro
     expose:
       - "8082"
     # The ODB runs its ~900 Flyway migrations *before* binding the port, so "the port is
@@ -274,8 +289,70 @@ services:
           - odb.${GPP_TEST_DOMAIN:-gpp-test.internal}
           - itc.${GPP_TEST_DOMAIN:-gpp-test.internal}
           - prefs.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          # The record of outgoing mail, served by Caddy (ticket 028).
+          - mail.${GPP_TEST_DOMAIN:-gpp-test.internal}
+          # Mailgun's API name resolves to Caddy inside the stack: the odb's email client has
+          # the real URL hardcoded, and the Caddyfile answers for it (ticket 028).
+          - api.mailgun.net
+
+  # The object store for proposal attachments (ticket 028), in one of two modes chosen by
+  # S3_MODE — bootstrap writes the matching COMPOSE_PROFILES into stack/.env.generated, so
+  # plain compose calls agree with it.
+  #
+  #   local  (default)  `s3`: versitygw, a 30 MB Go S3 server over a throwaway volume. Any
+  #                     directory under its root is a bucket, so the bucket exists before the
+  #                     odb boots and nothing needs an init step. CI and laptops. (MinIO's
+  #                     public images were withdrawn in 2025.)
+  #   bucket            `s3proxy`: aws-sigv4-proxy in front of the real bucket (NOIRLab's
+  #                     `noirlab-gpp-tests`, us-west-2). The odb cannot use that bucket
+  #                     directly — static keys without a session token, region pinned to
+  #                     us-east-1 — so the proxy discards the odb's signature and re-signs
+  #                     the request with the host's credential chain: the instance role on
+  #                     the AWS target, exported keys on a laptop. Internal network only; it
+  #                     is the thing holding real credentials.
+  s3:
+    profiles: [s3-local]
+    image: ${S3_IMAGE:-versity/versitygw:v1.8.0}
+    mem_limit: ${S3_MEM_LIMIT:-128m}
+    environment:
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-gpp-tests}
+      ROOT_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-gpp-tests-attachments}
+      VGW_REGION: us-east-1
+    # The image's entrypoint runs the gateway directly; this wrapper creates the bucket first.
+    # The named volume is not optional: versitygw keeps object metadata in extended
+    # attributes, which a macOS bind mount does not have.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "mkdir -p /data/${S3_BUCKET:-gpp-tests} && exec /usr/local/bin/versitygw posix /data"
+    volumes:
+      - s3data:/data
+    expose:
+      - "7070"
+
+  s3proxy:
+    profiles: [s3-bucket]
+    # Pinned by digest: the ECR Public repository publishes only commit-hash tags and `latest`.
+    image: ${S3PROXY_IMAGE:-public.ecr.aws/aws-observability/aws-sigv4-proxy@sha256:d16d88cf00c59d14e47c5d837537349bfa96d9b750e1d7b7218156071eea9766}
+    mem_limit: ${S3PROXY_MEM_LIMIT:-128m}
+    command:
+      - --name=s3
+      - --region=${S3_REGION:-us-west-2}
+      - --host=s3.${S3_REGION:-us-west-2}.amazonaws.com
+      - --log-failed-requests
+    environment:
+      AWS_REGION: ${S3_REGION:-us-west-2}
+      # Empty values are ignored by the AWS SDK, which then falls through to the instance
+      # role (IMDSv2 with hop limit 2 on the gpp-tests launch template, so a container can
+      # reach it). On a laptop export the three from
+      # `aws configure export-credentials --profile gpp-tests --format env` with this prefix.
+      AWS_ACCESS_KEY_ID: ${S3PROXY_AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${S3PROXY_AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${S3PROXY_AWS_SESSION_TOKEN:-}
+    expose:
+      - "8080"
 
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  s3data:

@@ -25,9 +25,9 @@ reorder from real usage knowledge.
 | Constraint sets | IQ, cloud extinction, sky background, water vapor, elevation | none | — | P1 |
 | Timing windows | Create/edit windows, repeat rules | none | — | P1 |
 | Observation groups | Scheduling groups, AND/OR groups, drag into groups | none | — | P1 |
-| Attachments | Finder charts, proposal attachments upload/list | none | — | **P0 since 2026-09-07** — needs an object store, not just fixtures: the ODB runs with dummy Cloudcube credentials (`stack/docker-compose.yml`), so there is nowhere to upload. This now gates proposal *submission at both layers*: the ODB itself requires a Science and a Team attachment (see Proposals; wayfinder ticket 028) |
+| Attachments | Finder charts, proposal attachments upload/list | partial (the proposal's Science and Team uploads and their read-back, at both layers; finder charts and MOS masks not yet) | `proposals.spec.ts` scenario 4; k6 `proposal-attachments` | P0 — the stack has an object store since ticket 028 (versitygw locally and in CI, the real bucket on AWS); uploads go through the ODB's REST route, built once in `lib/attachments.js` |
 | Program users & invitations | Invite, roles, revoke | partial (a PI's partner link is set and read back) | `proposals.spec.ts` scenario 2 | P1 — the unblocker landed (fabricated standard users + session injection); invite/revoke is now ordinary work |
-| Proposals | Create, partners/time split, submit | partial (create, splits, UI editor and its validation, the ODB's refusal to submit without attachments). Submit + retract lifecycle blocked on the object store — see note | `proposals.spec.ts` | P1 |
+| Proposals | Create, partners/time split, submit | covered (create, splits, UI editor and its validation, the ODB's refusal without attachments, the two uploads, submit with a minted reference, retract — by API and through Explore's own buttons; the submission email is asserted at the stack's Mailgun stand-in) | `proposals.spec.ts` | P1 |
 | User preferences persistence | Grid layouts, tile states surviving reload (Hasura path) | partial (prefs socket proven alive by shell render) | `journey.spec.ts` scenario 1 | P1 |
 | New-user signup | ORCID flow | none | — | P2 (mock-ORCID tier only; the real-ORCID leg stays a manual smoke test by decision — [decision note](../research/orcid-auth-testing-strategy.md)) |
 
@@ -53,10 +53,16 @@ rules and Explore's diverge — worth writing down, because the divergence is th
 - **Since 2026-09-07 the ODB requires the two attachments as well.** The nightly caught it:
   scenario 4 used to submit and retract through the ODB (status, minted reference, retract)
   and went red with "Science attachment is required" / "Team attachment is required" the day
-  the `-dev` ODB adopted Explore's rule. Scenario 4 now asserts that refusal — exactly two
-  errors, naming exactly those files — and the lifecycle is no longer exercised anywhere in
-  this stack until it has an object store (wayfinder ticket 028), which is also what the
-  surge run's proposal loop needs.
+  the `-dev` ODB adopted Explore's rule. Scenario 4 still asserts that refusal first — exactly
+  two errors, naming exactly those files — and then, since ticket 028 gave the stack an object
+  store, uploads both through the ODB's REST route (`lib/attachments.js`, the fixture PDF
+  under two names), reads them back, submits, checks the minted reference and retracts.
+  Scenario 5 repeats the lifecycle through Explore's own Submit and Retract buttons.
+- **The ODB emails on submission**, and the mutation fails if the send does (seen as
+  `email_send_error` the first time the lifecycle ran again). The stack answers for
+  `api.mailgun.net` itself (Caddy, `stack/caddy/Caddyfile`), records every message it is
+  handed and delivers nothing; scenario 4 asserts the submission email arrived there, with
+  recipients inside the stack's fake domains (`tests/support/mail.ts`). No email can leave.
 
 ## Ground rules for new specs
 

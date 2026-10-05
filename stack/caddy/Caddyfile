@@ -56,3 +56,56 @@ prefs.{$GPP_TEST_DOMAIN} {
 	tls internal
 	reverse_proxy http://hasura:8080
 }
+
+# Mailgun's stand-in (ticket 028). The odb emails the PI on every proposal submission and
+# its Mailgun base URL is hardcoded (lucuma-odb Config.scala: "add to environment?"), so the
+# stack answers for api.mailgun.net itself: docker-compose.yml aliases the name to this
+# container, the certificate is minted by the same internal CA, and the odb trusts that CA
+# through the merged truststore bootstrap builds (stack/scripts/java-truststore.sh). The
+# odb decodes `id` and `message` from the send reply (EmailService.scala) and strips the
+# angle brackets Mailgun puts around the id.
+#
+# No email can leave the stack: this name never resolves to Mailgun from inside the compose
+# network, the odb's MAILGUN_API_KEY is a dummy that real Mailgun refuses with 401 anyway,
+# and the recipients are the fabricated users' @<domain> addresses. What the odb *tried* to
+# send is recorded instead — every request's form body goes into the access log below, which
+# the `mail.` site serves back so a test can assert that the submission email was handed
+# over, to whom, and with which subject.
+api.mailgun.net {
+	tls internal
+
+	log {
+		output file /data/mailgun.log {
+			roll_size 10MiB
+			roll_keep 2
+		}
+		format json
+	}
+	log_append body {http.request.body}
+
+	handle /v3/*/messages {
+		header Content-Type "application/json"
+		respond `{"id":"<{http.request.uuid}@mail.example.com>","message":"Queued. Thank you."}` 200
+	}
+
+	handle /v3/*/events {
+		header Content-Type "application/json"
+		respond `{"items":[],"paging":{}}` 200
+	}
+
+	respond 404
+}
+
+# The record of what the odb handed to the stand-in above, one JSON line per request, read by
+# tests/support/mail.ts and lib/mail.js. Only that file: /data also holds Caddy's CA keys.
+mail.{$GPP_TEST_DOMAIN} {
+	tls internal
+
+	handle /mailgun.log {
+		root * /data
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	respond 404
+}

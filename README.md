@@ -21,6 +21,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 |---|---|
 | `lib/` | Pure, dependency-free modules shared by **both** suites — GraphQL operations, endpoints, metric-label budget, run summaries, threshold calibration, annotations, and the scenario parity catalog (`scenario-catalog.js`: every scenario runs in both suites unless its entry says why not; enforced by `npm run check`). Unit-tested; imported directly by k6 and by Playwright. |
 | `schema/` | Vendored `OdbSchema.graphql`, so every operation is schema-validated offline ([why](schema/README.md)). |
+| `fixtures/` | Files the suites upload: the proposal-attachment PDF both Playwright and k6 send through the ODB's REST route (`lib/attachments.js`, ticket 028). |
 | `stack/` | The ephemeral regression stack: `docker-compose.yml`, Caddy config, bootstrap scripts (spec §3). |
 | `tests/` | The Playwright journey (spec §5) and its support layer. Selectors are all in `tests/support/selectors.ts`. |
 | `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model), `execution.js` (Observe instances executing sequences, ticket 021) and `subscribers.js` (held websockets with churn, ticket 022), plus their libs, including the graphql-transport-ws client. |
@@ -62,7 +63,8 @@ npm run stack:down                 # or CLEAN=1 ... to delete generated keys and
 ```
 
 `npm run stack:up` is idempotent and prints every URL it brings up. It needs one `sudo` to add
-five hostnames to `/etc/hosts` (`SKIP_HOSTS=1` to skip). Everything it generates — the Postgres
+six hostnames to `/etc/hosts` (`SKIP_HOSTS=1` to skip; `stack/scripts/hosts.sh` adds any that
+are missing, such as `mail.` on a machine set up before ticket 028). Everything it generates — the Postgres
 certificate, the throwaway SSO keypair, the service JWT — is per-run and gitignored.
 
 Useful switches: `SKIP_PULL=1` (use local images), `FORCE=1` (regenerate certificate and
@@ -129,7 +131,7 @@ SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscriber
 
 ## Status
 
-- **Regression path: complete and green.** Stack boots in CI from empty, 17 e2e tests and the
+- **Regression path: complete and green.** Stack boots in CI from empty, 32 e2e tests and the
   k6 regression pass nightly on
   [cquiroz/gpp-tests](https://github.com/cquiroz/gpp-tests/actions). The one red night so far
   (2026-09-07) was the odb changing a rule under the suite, caught within a day.
@@ -141,6 +143,13 @@ SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscriber
   all with 0 errors. A workflow-driven run waits on IT granting CI an identity
   ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)); `performance.yml` still
   exits green with a notice until the `LOADTEST_*` repository variables exist.
+- **Proposals submit again ([ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md), 2026-10-05).**
+  The stack has an object store for attachments — versitygw locally and in CI, the real
+  `noirlab-gpp-tests` bucket through a re-signing proxy on the AWS target — and a Mailgun
+  stand-in in Caddy, because the odb emails on every submission. Both suites upload the two
+  required attachments through the odb's REST route; the e2e lifecycle (upload, submit, minted
+  reference, retract — by API and through Explore's buttons) is back, and the spec asserts the
+  submission email reached the stand-in. No email can leave the stack.
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
   [map](wayfinder/map-gpp-tests.md); the decision behind the order is
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).
@@ -223,3 +232,11 @@ both live only as long as the stack does.
   the reasoning is in `research/odb-memory-growth-handoff.md`.
 - **A metric label was rejected.** That is `lib/tags.js` doing its job; add the dimension to
   the annotation instead, or take the series budget hit knowingly.
+- **Submitting a proposal fails with `email_send_error`.** The odb reached something other
+  than the stack's Mailgun stand-in, or its JVM does not trust Caddy's CA. Bootstrap builds
+  `stack/certs/cacerts` (image CAs plus Caddy's root) *before* starting the odb; an odb started
+  by hand before that file existed needs `npm run stack:up` again. What the odb handed to the
+  stand-in is at `https://mail.gpp-test.internal/mailgun.log` (`tests/support/mail.ts` reads it).
+- **An attachment upload answers 500.** The object store is down or the odb points elsewhere:
+  `docker compose ps s3` in `S3_MODE=local`, the `s3proxy` logs in bucket mode; the odb's
+  endpoint is `AWS_ENDPOINT_URL_S3` in its environment (`stack/docker-compose.yml`).

@@ -12,6 +12,7 @@ import { loginAsGuest, loginAsStandardUser } from "./lib/auth.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
 import { ObserveInstance, seedExecutableObservations, serviceSession } from "./lib/execution.js";
 import { observeBrowserFixture, observeBrowserSession } from "./lib/subscribers.js";
+import { proposalAttachmentsScenario } from "./lib/attachments.js";
 import {
   calculatedResultsScenario,
   createObservationScenario,
@@ -87,6 +88,14 @@ export default async function () {
   const piProgramId = createProgramScenario(pi, { name: `gpp-tests modes ${TESTID}` });
   scenario("observing-modes", () =>
     Boolean(piProgramId) && observingModesScenario(pi, piProgramId),
+  );
+
+  // The REST leg of a proposal submission (ticket 028): both required attachments uploaded
+  // to the PI's program and read back. Submission itself needs a call only staff can open —
+  // the k6 proposals scenario is ticket 017.
+  scenario("proposal-attachments", () =>
+    Boolean(piProgramId) &&
+    proposalAttachmentsScenario(pi, piProgramId, { label: `gpp-tests ${TESTID}` }),
   );
 
   // One executed step, Observe's way, as the service identity (ticket 021): keeps the

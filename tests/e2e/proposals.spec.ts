@@ -8,13 +8,20 @@ import {
   createTarget,
   gmosNorthLongSlit,
   observationWorkflow,
+  programAttachments,
   proposalDetails,
   setProgramDescription,
   setProgramUserDetails,
   setProposalStatus,
   updateTargetToTestTarget,
 } from "../../lib/odb-operations.js";
-import { GraphQLError, eventually } from "../support/odb.js";
+import { mailSentSince, sentMail } from "../support/mail.js";
+import {
+  GraphQLError,
+  endpoints,
+  eventually,
+  uploadProposalAttachments,
+} from "../support/odb.js";
 import * as ui from "../support/selectors.js";
 import { StandardSession, loadStandardUser } from "../support/standard-users.js";
 
@@ -33,9 +40,10 @@ import { StandardSession, loadStandardUser } from "../support/standard-users.js"
  * The split between API and UI follows the journey's (README, deviation 6): the fixture is
  * seeded through GraphQL; the behaviour under test is the proposal editor's validation in
  * Explore (scenario 3) and the ODB's own submission rule (scenario 4), each with a GraphQL
- * read-back. Since 2026-09-07 both layers refuse a proposal without its two attachments,
- * and the ephemeral stack has no object store to upload them to — so the submit/retract
- * lifecycle is not exercised here until wayfinder ticket 028 lands.
+ * read-back. Since 2026-09-07 both layers refuse a proposal without its two attachments;
+ * since ticket 028 the stack has an object store, so scenario 4 uploads them through the
+ * ODB's REST route (`lib/attachments.js`) and runs the submit/retract lifecycle by API, and
+ * scenario 5 drives the same lifecycle through Explore's own buttons.
  */
 
 const staff = loadStandardUser("TEST_STAFF");
@@ -235,7 +243,15 @@ test("scenario 3: Explore shows the proposal, and refuses to submit it incomplet
   });
 });
 
-test("scenario 4: the ODB refuses to submit the proposal without its attachments", async () => {
+/** What `proposalDetails` returns, as far as these scenarios read it. */
+interface ProposalDetailsData {
+  program: {
+    proposalStatus: string;
+    proposal: { reference: { label: string } | null } | null;
+  };
+}
+
+test("scenario 4: the ODB refuses to submit without attachments, then submits and retracts once both are uploaded", async () => {
   const programId = proposal.programId!;
   const odb = piSession.client();
 
@@ -249,9 +265,9 @@ test("scenario 4: the ODB refuses to submit the proposal without its attachments
   // needs an educational status and an affiliation) and this assertion caught them the same
   // night, as four errors instead of two; the fixture now sets both (`setProgramUserDetails`).
   //
-  // The lifecycle returns once the stack has an object store to upload into (wayfinder
-  // ticket 028). Until then submission cannot be exercised anywhere in this stack, and the
-  // refusal is the ODB-level contract under test.
+  // Since ticket 028 the stack has an object store, so the refusal is followed by the two
+  // uploads — the ODB's REST route, the request shared with k6 through lib/attachments.js —
+  // and the lifecycle the nightly lost on 2026-09-07 is back.
   await test.step("submit is refused, naming exactly the two attachments", async () => {
     let error: unknown;
     try {
@@ -270,13 +286,100 @@ test("scenario 4: the ODB refuses to submit the proposal without its attachments
   });
 
   await test.step("read back: still not submitted, no reference minted", async () => {
-    const data = await odb.run<{
-      program: {
-        proposalStatus: string;
-        proposal: { reference: { label: string } | null } | null;
-      };
-    }>(proposalDetails({ programId }));
+    const data = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
     expect(data.program.proposalStatus).toBe("NOT_SUBMITTED");
     expect(data.program.proposal?.reference ?? null).toBeNull();
+  });
+
+  await test.step("upload the Science and Team attachments, and read them back", async () => {
+    const uploaded = await uploadProposalAttachments(odb, programId, proposal.programName);
+    expect(uploaded).toHaveLength(2);
+
+    const data = await odb.run<{
+      program: {
+        attachments: { id: string; attachmentType: string; fileName: string; fileSize: number }[];
+      };
+    }>(programAttachments({ programId }));
+    const listed = data.program.attachments;
+    expect(listed.map((a) => a.attachmentType).sort()).toEqual(["SCIENCE", "TEAM"]);
+    for (const file of uploaded) {
+      const entry = listed.find((a) => a.id === file.id);
+      expect(entry, `${file.fileName} is listed under the id the upload returned`).toBeTruthy();
+      expect(entry!.fileName).toBe(file.fileName);
+      expect(Number(entry!.fileSize)).toBe(file.size);
+    }
+  });
+
+  const mailBefore = (await sentMail()).length;
+
+  await test.step("submit: SUBMITTED, with a reference minted", async () => {
+    const data = await odb.run<{ setProposalStatus: { program: { proposalStatus: string } } }>(
+      setProposalStatus({ programId, status: "SUBMITTED" }),
+    );
+    expect(data.setProposalStatus.program.proposalStatus).toBe("SUBMITTED");
+
+    const details = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
+    expect(details.program.proposalStatus).toBe("SUBMITTED");
+    expect(details.program.proposal?.reference?.label, "a proposal reference").toMatch(/\S/);
+  });
+
+  await test.step("the submission email went to the stack's Mailgun stand-in, not out", async () => {
+    // The odb emails on submission and the mutation fails if the send does (observed as
+    // email_send_error before the stand-in existed). The stand-in records what it was handed
+    // and delivers nothing; the recipients are the fabricated users' stack-local addresses.
+    const mail = await eventually(
+      "the submission email in the stack's mail record",
+      async () => {
+        const fresh = await mailSentSince(mailBefore);
+        return fresh.length ? fresh : undefined;
+      },
+      { timeoutMs: 30_000, intervalMs: 1_000 },
+    );
+    for (const message of mail) {
+      expect(message.status).toBe(200);
+      expect(message.subject).toMatch(/\S/);
+      for (const to of message.to) {
+        expect(to, "a recipient inside the stack's fake domains").toMatch(
+          new RegExp(`@(${endpoints.domain.replace(/\./g, "\\.")}|example\\.com)$`),
+        );
+      }
+    }
+  });
+
+  await test.step("retract: NOT_SUBMITTED again", async () => {
+    await odb.run(setProposalStatus({ programId, status: "NOT_SUBMITTED" }));
+    const details = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
+    expect(details.program.proposalStatus).toBe("NOT_SUBMITTED");
+  });
+});
+
+test("scenario 5: Explore's own Submit and Retract buttons drive the same lifecycle", async () => {
+  const programId = proposal.programId!;
+  const odb = piSession.client();
+
+  // Scenario 4 left the program with both attachments and NOT_SUBMITTED. Explore's buttons
+  // call the same setProposalStatus mutation (ProposalSubmissionBar.scala) and each is
+  // rendered only in the state where it applies, so "the other button appeared" is the
+  // transition, and the API read-back pins which side a failure is on.
+  await test.step("with both attachments uploaded, Submit is enabled", async () => {
+    await page.goto(`/${programId}/proposal`);
+    await expect(ui.submitProposalButton(page)).toBeVisible({ timeout: 120_000 });
+    await expect(ui.proposalErrors(page).getByText(/attachment is required/i)).toHaveCount(0);
+    await expect(ui.submitProposalButton(page)).toBeEnabled();
+  });
+
+  await test.step("Submit: Retract takes its place, and the ODB says SUBMITTED", async () => {
+    await ui.submitProposalButton(page).click();
+    await expect(ui.retractProposalButton(page)).toBeVisible();
+    const details = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
+    expect(details.program.proposalStatus).toBe("SUBMITTED");
+  });
+
+  await test.step("Retract: Submit is back, and the ODB says NOT_SUBMITTED", async () => {
+    await expect(ui.retractProposalButton(page)).toBeEnabled();
+    await ui.retractProposalButton(page).click();
+    await expect(ui.submitProposalButton(page)).toBeVisible();
+    const details = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
+    expect(details.program.proposalStatus).toBe("NOT_SUBMITTED");
   });
 });

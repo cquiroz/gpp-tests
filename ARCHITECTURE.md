@@ -37,7 +37,7 @@ against a dedicated target on AWS, with k6 on a second instance beside it.
 | Browser suite | `tests/` | Playwright journeys against Explore; selectors only through Explore's `data-testid` contract | GitHub runner, nightly |
 | k6 regression | `k6/regression.js` | The same scenarios at the GraphQL layer, 14 observing modes, one Observe step, one websocket session | GitHub runner, nightly, after the browser suite |
 | k6 load | `k6/load.js`, `k6/execution.js`, `k6/subscribers.js` | The 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; the composed surge profile to come (018) | AWS generator instance, on demand |
-| Ephemeral stack | `stack/` | Compose file, Caddy, bootstrap scripts: boots the seven services from empty, mints keys and the service JWT, fabricates standard users | Inside the GitHub runner; locally; on the AWS target |
+| Ephemeral stack | `stack/` | Compose file, Caddy, bootstrap scripts: boots the eight services from empty (the eighth is the object store for attachments; Caddy also stands in for Mailgun), mints keys and the service JWT, fabricates standard users | Inside the GitHub runner; locally; on the AWS target |
 | Tools and CI | `tools/`, `.github/` | Replay operations at boot, compute thresholds from the ledger, write run summaries, post Grafana annotations; `regression.yml`, `performance.yml` | GitHub Actions |
 | AWS runner | `loadtest/aws-run.sh`, `loadtest/aws-first-run.sh` | The standard unattended run (regression, execution, subscribers, stop) and the wizard behind it, interactive when wanted, under NOIRLab's launch procedure | Operator's laptop, over SSM |
 
@@ -64,6 +64,7 @@ flowchart LR
       hasura["hasura :8080<br/>Explore preferences"]
       obscalc["obscalc<br/>digests, workflow state"]
       pg[("postgres :5432<br/>one shared database")]
+      s3[("object store :7070<br/>versitygw, proposal attachments")]
     end
   end
   firebase["Firebase dev hosting<br/>Explore bundle"]
@@ -82,6 +83,8 @@ flowchart LR
   odb --> pg
   obscalc --> pg
   odb --> itc
+  odb --> s3
+  odb -. "mail: api.mailgun.net" .-> caddy
   heroku -. pulled at boot .-> stack
   k6r -. remote write .-> grafana
   tools -. publish .-> rundata
@@ -90,9 +93,18 @@ flowchart LR
 Caddy fronts every service under `*.gpp-test.internal` with its own CA, so the suites use one
 hostname scheme locally, in CI and on AWS. Explore does not run in the stack: Caddy proxies
 Firebase's dev hosting, so the browser suite tests the Explore build that is actually
-deployed. Bootstrap mints the SSO keypair and the service JWT, waits for all seven services,
+deployed. Bootstrap mints the SSO keypair and the service JWT, waits for all eight services,
 replays every GraphQL operation as a contract check, and fabricates the PI and staff users
 the suites log in as.
+
+Two things the stack answers for itself ([ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md)).
+Proposal attachments go to its own object store: versitygw here, the real bucket through a
+re-signing proxy on AWS; the odb is pointed at either by `AWS_ENDPOINT_URL_S3`. And the odb's
+emails — it sends one on every proposal submission, to a hardcoded Mailgun URL — go to Caddy,
+which answers as `api.mailgun.net` inside the compose network and records each message in a
+log it serves at `mail.gpp-test.internal`, so a test can assert what was sent. No email can
+leave the stack: the name never resolves to Mailgun from inside, the API key is a dummy, and
+the recipients are the fabricated users' stack-local addresses.
 
 ## Where it runs: the AWS load target
 
@@ -120,6 +132,7 @@ flowchart LR
     end
     ssm["SSM Session Manager"]
     nat["NAT gateway"]
+    bucket[("S3 bucket noirlab-gpp-tests<br/>attachments, per-run prefix")]
   end
   heroku["Heroku container registry"]
   grafana["Grafana Cloud<br/>Prometheus remote write"]
@@ -132,6 +145,7 @@ flowchart LR
   k6l -. "metrics" .-> nat
   nat --> heroku
   nat --> grafana
+  tstack -. "sigv4 proxy, instance role" .-> bucket
 ```
 
 Both instances sit in one availability zone and are stopped between runs. The generator is a
@@ -140,6 +154,10 @@ hosted GitHub runner would add internet latency to every sample. Results come ba
 k6 streams metrics to Grafana Cloud during the run, and the wizard copies the k6 summaries,
 logs and the target's container-memory samples back over SSM into `out/`. The only things that can be stopped or terminated by the tooling are instances
 tagged `gpp-tests:loadtest=1`, and the wizard re-checks that tag before every such call.
+Proposal attachments written during a run go to the `noirlab-gpp-tests` bucket under a prefix
+of the run's own, through the stack's re-signing proxy and the target's instance role — the
+odb itself cannot use the bucket, it pins region us-east-1 and static keys — and the wizard
+prints what was uploaded and deletes the prefix at teardown.
 
 ## How traffic flows: the virtual users
 
@@ -268,10 +286,11 @@ flowchart LR
 | How the AWS target works and what IT allows | [ticket 016](wayfinder/tickets/016-automate-aws-load-target.md), [`research/aws-load-target-options.md`](research/aws-load-target-options.md) |
 | The execution model and its first numbers | [ticket 021](wayfinder/tickets/021-observe-execution-vus-and-seed.md) |
 | The websocket client, the subscriber shapes and their first numbers | [ticket 022](wayfinder/tickets/022-graphql-ws-client-and-subscriber-vus.md) |
+| The object store, the attachment uploads, the Mailgun stand-in | [ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md) |
 | Why the odb's memory grows to its limit, and the heap cap | [`research/odb-memory-growth-handoff.md`](research/odb-memory-growth-handoff.md) |
 | Domain vocabulary | [`CONTEXT.md`](CONTEXT.md) |
 
-Next on the frontier: the object store the proposal loop needs (028), standard users and
-proposals in k6 (017), then the surge profile that composes execution, subscribers and
+Next on the frontier: standard users and proposals in k6 (017), now that the object store and
+the uploads exist (028), then the surge profile that composes execution, subscribers and
 proposals over the regular mix, and its SLO file (018, 023). In parallel, IT's answer on a CI
 identity for AWS (016).

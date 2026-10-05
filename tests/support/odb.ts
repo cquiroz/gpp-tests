@@ -1,4 +1,10 @@
+import { readFileSync } from "node:fs";
 import type { BrowserContext, Page } from "@playwright/test";
+import {
+  PROPOSAL_ATTACHMENT_FIXTURE,
+  attachmentUploadRequest,
+  proposalAttachments,
+} from "../../lib/attachments.js";
 import { stackEndpoints } from "../../lib/endpoints.js";
 import type { Operation } from "../../lib/odb-operations.js";
 
@@ -25,11 +31,54 @@ export class GraphQLError extends Error {
   }
 }
 
+export type AttachmentType = "science" | "team" | "finder" | "mos_mask" | "pre_imaging" | "custom_sed";
+
+export interface UploadedAttachment {
+  id: string;
+  attachmentType: AttachmentType;
+  fileName: string;
+  /** Bytes sent, for the read-back's `fileSize`. */
+  size: number;
+}
+
 export class OdbClient {
   constructor(
     private readonly token: () => Promise<string>,
     private readonly url: string = endpoints.odbGraphqlUrl,
+    private readonly restUrl: string = endpoints.odbRestUrl,
   ) {}
+
+  /**
+   * Uploads one attachment over the ODB's REST route (ticket 028) and returns the new
+   * attachment id. The request itself comes from `lib/attachments.js`, shared with k6.
+   */
+  async upload(args: {
+    programId: string;
+    attachmentType: AttachmentType;
+    fileName: string;
+    description?: string;
+    body: Uint8Array;
+  }): Promise<UploadedAttachment> {
+    const request = attachmentUploadRequest({ odbRestUrl: this.restUrl, ...args });
+    const response = await fetch(request.url, {
+      method: request.method,
+      headers: { ...request.headers, authorization: `Bearer ${await this.token()}` },
+      body: args.body as BodyInit,
+    });
+    const text = (await response.text()).trim();
+    if (!response.ok) {
+      throw new Error(
+        `${request.operationName} ${args.attachmentType} ${args.fileName}: ` +
+          `HTTP ${response.status} ${text.slice(0, 300)}`,
+      );
+    }
+    return {
+      id: text,
+      attachmentType: args.attachmentType,
+      fileName: args.fileName,
+      size: args.body.byteLength,
+    };
+  }
 
   /** Runs an operation and returns `data`, throwing on any GraphQL error. */
   async run<T = any>(operation: Operation): Promise<T> {
@@ -66,6 +115,28 @@ export class OdbClient {
     }
     return payload.data;
   }
+}
+
+/** The fixture PDF both suites upload, read from the repo root. */
+export function proposalAttachmentFixture(): Uint8Array {
+  return readFileSync(new URL(`../../${PROPOSAL_ATTACHMENT_FIXTURE}`, import.meta.url));
+}
+
+/**
+ * The two uploads a proposal needs before the ODB (and Explore) will submit it: the Science
+ * and the Team attachment, both the fixture PDF under distinct names.
+ */
+export async function uploadProposalAttachments(
+  odb: OdbClient,
+  programId: string,
+  label?: string,
+): Promise<UploadedAttachment[]> {
+  const body = proposalAttachmentFixture();
+  const uploaded: UploadedAttachment[] = [];
+  for (const file of proposalAttachments(label)) {
+    uploaded.push(await odb.upload({ programId, ...file, body }));
+  }
+  return uploaded;
 }
 
 /**

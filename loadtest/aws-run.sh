@@ -12,7 +12,8 @@
 # It is loadtest/aws-first-run.sh with AUTO=1 and the usual answers, kept awake with caffeinate
 # on macOS. The stopped pair comes back as the same instances, the stack reboots on the target
 # from tonight's -dev images, results land in out/ and the pair is stopped at the end or on any
-# failure. About 45 minutes for the default; nothing to type.
+# failure. About 45 minutes for the default; nothing to type. Proposal attachments go to the
+# noirlab-gpp-tests bucket under a per-run prefix and are deleted at the end (ticket 028).
 #
 # Needs HEROKU_API_KEY and the K6_PROMETHEUS_RW_* values in the repo's gitignored .env (direnv
 # loads it), and the AWS CLI profile `gpp-tests` with the Session Manager plugin.

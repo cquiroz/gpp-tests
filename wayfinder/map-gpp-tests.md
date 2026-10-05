@@ -67,8 +67,10 @@ Settled during charting (constraints for every ticket):
 - Runs fire **on demand and before promoting the odb** (manual dispatch with digests);
   never per merge. The ticket 010 dev-process items wait behind the stress work.
 - **Proposal submission needs two attachments** (odb rule since 2026-09-07, caught by the
-  nightly). The stack and the load target need an object store (028) before any layer can
-  submit; the surge's proposal loop carries two uploads per proposal.
+  nightly). Since 028 (2026-10-05) the stack and the load target have an object store —
+  versitygw, or the real bucket through a re-signing proxy — and a stand-in for the Mailgun
+  call the odb makes on every submission; the surge's proposal loop carries two uploads per
+  proposal.
 
 ## Decisions so far
 
@@ -103,7 +105,8 @@ Settled during charting (constraints for every ticket):
 - [Regression scenarios: an observation in every observing mode](tickets/030-observing-modes-regression-scenarios.md) —
   14 modes (11 calculated, visitor, Keck and Subaru exchange) as the fabricated PI, at both
   layers. k6 builds each mode from `lib/observing-modes.js`; the browser picks it in Explore and
-  takes Explore's defaults. Green in the nightly since 2026-10-02. MOS waits on 028.
+  takes Explore's defaults. Green in the nightly since 2026-10-02. MOS (a mask upload) is
+  unblocked by 028 and not yet built.
 - [Observe execution VUs and the executable-observation seed](tickets/021-observe-execution-vus-and-seed.md) —
   built 2026-10-03 against lucuma-apps main of 2026-10-02 (background event sender, five
   blocking points): `ObserveInstance` in `k6/lib/execution.js`, six execution operations,
@@ -120,15 +123,24 @@ Settled during charting (constraints for every ticket):
 - [Upstream: data-testids for Explore's observation configuration](tickets/031-upstream-testids-for-observation-configuration.md) —
   written here and merged as lucuma-apps#1623 (2026-10-01): mode picker, instrument filter,
   mode-table rows, Accept, sequence time and steps, visitor editor.
+- [An object store for the stack, and attachment uploads in the test layers](tickets/028-object-store-and-attachment-uploads.md) —
+  built 2026-10-05. versitygw in the compose stack (MinIO's public images are gone); on AWS
+  the real `noirlab-gpp-tests` bucket through an aws-sigv4-proxy sidecar, because the odb
+  pins region us-east-1 and static keys; `AWS_ENDPOINT_URL_S3` points the odb at either.
+  `lib/attachments.js` builds the REST upload for both suites; the proposals lifecycle is
+  back in e2e (upload, submit, reference, retract, by API and through Explore's buttons) and
+  k6 uploads both files per run. Found on the way: the odb emails on every submission to a
+  hardcoded Mailgun URL, so Caddy now answers as `api.mailgun.net`, records the mail and
+  delivers nothing. Two upstream asks for Carlos: a configurable S3 region/endpoint, and a
+  configurable Mailgun base URL.
 
 ## Frontier now
 
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
 manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
 OIDC role, or a runner inside `nl-vpc`), **023** (surge SLOs + verdict), **024** (telemetry
-stack, HITL), **027** (read production sizing, HITL), **028** (object store + attachment
-uploads — now blocks 017). Order of build: 028 → 017 → 018/023, developed locally; 016 in
-parallel. 021 and 022 closed 2026-10-03.
+stack, HITL), **027** (read production sizing, HITL). Order of build: 017 → 018/023,
+developed locally; 016 in parallel. 021 and 022 closed 2026-10-03, 028 closed 2026-10-05.
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
@@ -139,8 +151,9 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
   subscribers, event latency p95 78 ms, round trip p95 11 ms, ping p95 2 ms, nothing lost):
   event latency from the mutation's send p95 < 500 ms, round trip from its acknowledgement
   p95 < 250 ms, zero unanswered pings, zero lost events. 023 owns the file.
-- **Attachment upload leg of the surge model** — sizes and count per submission, once 028
-  gives the stack somewhere to upload.
+- **Attachment upload leg of the surge model** — two uploads per submission (028). The
+  fixture is a 631-byte PDF; real science cases run to a few MB, so 017 decides whether to
+  pad, and the AWS wizard now prints the count and bytes a run uploaded.
 - **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers. 022 left a
   design: edits already carry the VU id and a timestamp in the subtitle, and all VUs share one
   k6 clock, so a collector VU subscribed across the subscriber programs can time any VU's edit

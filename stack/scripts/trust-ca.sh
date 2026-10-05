@@ -14,7 +14,12 @@ CA_PATH="${CA_PATH:-$STACK_DIR/certs/caddy-root.crt}"
 mkdir -p "$(dirname "$CA_PATH")"
 
 log "exporting Caddy's internal root CA"
-compose cp caddy:/data/caddy/pki/authorities/local/root.crt "$CA_PATH" >/dev/null \
+# Caddy writes the CA moments after it starts; bootstrap calls this right after starting it.
+for _ in $(seq 1 15); do
+  compose cp caddy:/data/caddy/pki/authorities/local/root.crt "$CA_PATH" >/dev/null 2>&1 && break
+  sleep 1
+done
+[[ -s "$CA_PATH" ]] \
   || die "could not copy the root CA out of the caddy container (is the stack up?)"
 
 [[ -s "$CA_PATH" ]] || die "exported CA is empty: $CA_PATH"

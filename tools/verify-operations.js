@@ -23,6 +23,7 @@ import {
   createTarget,
   executionConfig,
   gmosNorthLongSlit,
+  programAttachments,
   observation,
   observationCalculated,
   observations,
@@ -117,6 +118,9 @@ if (!programId) {
   console.error("cannot continue without a program");
   report();
 }
+
+// Empty for a fresh program; the point is that the selection still parses (ticket 028).
+await check(token, programAttachments({ programId }));
 
 const target = await check(token, createTarget({ programId }));
 const targetId = target?.createTarget.target.id;

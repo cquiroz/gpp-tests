@@ -8,6 +8,11 @@
 >   options; `--load` adds the 40-minute 200-VU trend profile).
 > - `aws-first-run.sh` — the wizard behind it; interactive without `AUTO=1`.
 > - `guard.sh` — the name-based safety rail the Heroku scripts share.
+> - Proposal attachments written during a run go to the `noirlab-gpp-tests` bucket under
+>   `gpp-tests/aws-<timestamp>/`, through the stack's re-signing proxy and the target's
+>   instance role (ticket 028). The wizard prints the totals and deletes the prefix at
+>   teardown (`KEEP_ATTACHMENTS=1` keeps it); a profile that cannot see the bucket boots
+>   the stack's own object store instead.
 >
 > How it works and what IT allows: [ticket 016](../wayfinder/tickets/016-automate-aws-load-target.md),
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) "Where it runs: the AWS load target",
