@@ -129,7 +129,8 @@ Settled during charting (constraints for every ticket):
   pins region us-east-1 and static keys; `AWS_ENDPOINT_URL_S3` points the odb at either.
   `lib/attachments.js` builds the REST upload for both suites; the proposals lifecycle is
   back in e2e (upload, submit, reference, retract, by API and through Explore's buttons) and
-  k6 uploads both files per run. Found on the way: the odb emails on every submission to a
+  k6 uploads both files per run; first bucket-mode AWS run green 2026-10-06 (two objects
+  through the proxy and the instance role, prefix deleted). Found on the way: the odb emails on every submission to a
   hardcoded Mailgun URL, so Caddy now answers as `api.mailgun.net`, records the mail and
   delivers nothing. Two upstream asks for Carlos: a configurable S3 region/endpoint, and a
   configurable Mailgun base URL.

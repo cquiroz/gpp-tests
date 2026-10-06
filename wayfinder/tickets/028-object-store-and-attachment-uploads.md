@@ -143,8 +143,14 @@ recipient. `mail.` is a sixth hostname (`hosts.sh`, the wizard's `/etc/hosts` li
 the bootstrap stage passes `S3_MODE=bucket …` to the target (falls back to `local` when the
 laptop profile cannot see the bucket); the collect stage prints the objects and bytes the
 run uploaded (the surge model's attachment leg); teardown and the AUTO failure path delete
-the prefix (`KEEP_ATTACHMENTS=1` keeps it). Not yet exercised on AWS: the next
-`loadtest/aws-run.sh` is the first bucket-mode run.
+the prefix (`KEEP_ATTACHMENTS=1` keeps it). **First bucket-mode run on AWS: 2026-10-06
+00:00–00:40 UTC**, after a bootstrap fix (the mode switch had landed inside the generated-env
+heredoc; the first attempt died there and the wizard stopped the pair and cleaned the prefix
+as designed). Regression green: 101 checks, 10/10 scenarios, 0 GraphQL errors, both
+uploads through the proxy and the instance role — the bucket held exactly 2 objects, 1262
+bytes, under `gpp-tests/aws-20261006T000031Z`, deleted at teardown. The rest of the run as
+before: 313 steps, step overhead p95 570 ms; 275 sockets, event latency p95 69 ms, nothing
+lost; odb memory 4.5 → 10.4 GiB over the execution run then flat, the JVM-sizing shape.
 
 **Verification.** `npm run check` green (typecheck, 220 unit tests incl. `attachments` and
 `mail`, guard, parity 32 ↔ 25). k6 regression locally: 10/10 scenarios, 94 checks, 0
