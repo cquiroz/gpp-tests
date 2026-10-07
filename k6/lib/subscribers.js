@@ -35,6 +35,7 @@ import {
   updateObservationSubtitle,
 } from "../../lib/odb-operations.js";
 import { loginAsStandardUser } from "./auth.js";
+import { loginAsPoolUser } from "./standard-users.js";
 import { gqlAsync } from "./graphql.js";
 import { GraphqlWsClient } from "./graphql-ws.js";
 import { tags, wsEventLatency, wsLostEvents, wsRoundTrip } from "./metrics.js";
@@ -42,6 +43,14 @@ import { tags, wsEventLatency, wsLostEvents, wsRoundTrip } from "./metrics.js";
 /** Scenario labels, literal so lib/scenario-catalog.test.js can find them. */
 const EXPLORE = { scenario: "explore-tab" };
 const OBSERVE = { scenario: "observe-browser" };
+
+/**
+ * Where in the standard-user pool this script's VUs start (ticket 017): each subscriber VU is
+ * its own PI or staff member, by its test-wide VU id, so no two VUs of a run — this script's
+ * or a composed run's (ticket 018) — share one. Without a pool, every VU is the browser persona.
+ */
+const SUBSCRIBER_PI_OFFSET = Number(__ENV.SUBSCRIBER_PI_OFFSET || 0);
+const SUBSCRIBER_STAFF_OFFSET = Number(__ENV.SUBSCRIBER_STAFF_OFFSET || 0);
 
 /** How long a round trip may take before the event counts as lost. */
 const EVENT_TIMEOUT_MS = Number(__ENV.WS_EVENT_TIMEOUT_SECONDS || 10) * 1000;
@@ -65,8 +74,10 @@ const EVENT_TIMEOUT_MS = Number(__ENV.WS_EVENT_TIMEOUT_SECONDS || 10) * 1000;
  * @returns {Fixture}
  */
 export function exploreTabFixture() {
-  const session = loginAsStandardUser("TEST_PI");
-  if (!session) fail("TEST_PI_REFRESH_TOKEN is not set: run stack/scripts/create-standard-users.sh");
+  const session =
+    loginAsPoolUser("pi", SUBSCRIBER_PI_OFFSET + exec.vu.idInTest - 1) ||
+    loginAsStandardUser("TEST_PI");
+  if (!session) fail("no PI identity: run stack/scripts/create-standard-users.sh against this stack");
   return { session, ...seedProgram(session, EXPLORE, "explore tab") };
 }
 
@@ -75,8 +86,10 @@ export function exploreTabFixture() {
  * @returns {Fixture}
  */
 export function observeBrowserFixture() {
-  const session = loginAsStandardUser("TEST_STAFF");
-  if (!session) fail("TEST_STAFF_REFRESH_TOKEN is not set: run stack/scripts/create-standard-users.sh");
+  const session =
+    loginAsPoolUser("staff", SUBSCRIBER_STAFF_OFFSET + exec.vu.idInTest - 1) ||
+    loginAsStandardUser("TEST_STAFF");
+  if (!session) fail("no staff identity: run stack/scripts/create-standard-users.sh against this stack");
   return { session, ...seedProgram(session, OBSERVE, "observe browser") };
 }
 

@@ -36,7 +36,7 @@ against a dedicated target on AWS, with k6 on a second instance beside it.
 | Shared library | `lib/` | Every GraphQL document and payload (`odb-operations.js`, validated offline against the vendored odb schema), endpoints, the metric-label budget, the scenario parity catalog, run identity, threshold calibration | Imported by every suite; pure JavaScript, no dependencies |
 | Browser suite | `tests/` | Playwright journeys against Explore; selectors only through Explore's `data-testid` contract | GitHub runner, nightly |
 | k6 regression | `k6/regression.js` | The same scenarios at the GraphQL layer, 14 observing modes, one Observe step, one websocket session | GitHub runner, nightly, after the browser suite |
-| k6 load | `k6/load.js`, `k6/execution.js`, `k6/subscribers.js` | The 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; the composed surge profile to come (018) | AWS generator instance, on demand |
+| k6 load | `k6/load.js`, `k6/execution.js`, `k6/subscribers.js`, `k6/proposals.js` | The 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; PIs submitting proposals at a literal rate; the composed surge profile to come (018) | AWS generator instance, on demand |
 | Ephemeral stack | `stack/` | Compose file, Caddy, bootstrap scripts: boots the eight services from empty (the eighth is the object store for attachments; Caddy also stands in for Mailgun), mints keys and the service JWT, fabricates standard users | Inside the GitHub runner; locally; on the AWS target |
 | Tools and CI | `tools/`, `.github/` | Replay operations at boot, compute thresholds from the ledger, write run summaries, post Grafana annotations; `regression.yml`, `performance.yml` | GitHub Actions |
 | AWS runner | `loadtest/aws-run.sh`, `loadtest/aws-first-run.sh` | The standard unattended run (regression, execution, subscribers, stop) and the wizard behind it, interactive when wanted, under NOIRLab's launch procedure | Operator's laptop, over SSM |
@@ -190,7 +190,7 @@ flowchart LR
 | VU type | Identity | What it sends | Suite |
 |---|---|---|---|
 | Guest | A new SSO guest per VU, refreshed via its cookie | Creates programs, targets and observations, then a 60/40 read/write mix of what Explore issues when a program opens | Trend run, regression |
-| PI / staff | Users inserted into the SSO database at bootstrap, 1-hour JWTs via refresh token | Proposals against a call, observations in every observing mode | Regression; surge proposal loop (ticket 017) |
+| PI / staff | Users inserted into the SSO database at bootstrap: two browser personas plus a pool of 250 PIs and 4 staff, one identity per VU (`k6/lib/standard-users.js`), JWTs via each user's refresh token | Proposals against a call — program, defined observation, two attachments, submit, retract/resubmit — and observations in every observing mode | Regression; proposal profile (ticket 017); subscribers; surge |
 | Execution | The service JWT the stack mints for odb, itc and obscalc | One Observe instance's events: visit, sequence, step and dataset events, dataset records, execution-config reads | Execution profile, regression smoke, surge |
 | Subscriber | PI (Explore tab) or staff (Observe browser) | Long-lived `graphql-transport-ws` subscriptions, eight per tab and three per browser; edits on a cadence measure the round trip from a mutation's ack to the matching event, pings measure the socket | Subscriber profile, regression smoke, surge |
 
@@ -290,7 +290,7 @@ flowchart LR
 | Why the odb's memory grows to its limit, and the heap cap | [`research/odb-memory-growth-handoff.md`](research/odb-memory-growth-handoff.md) |
 | Domain vocabulary | [`CONTEXT.md`](CONTEXT.md) |
 
-Next on the frontier: standard users and proposals in k6 (017), now that the object store and
-the uploads exist (028), then the surge profile that composes execution, subscribers and
-proposals over the regular mix, and its SLO file (018, 023). In parallel, IT's answer on a CI
-identity for AWS (016).
+Next on the frontier: the surge SLO file and verdict (023), then the surge profile that
+composes execution (021), subscribers (022) and the proposal loop (017) over the regular mix
+(018), with one full run per tier on AWS. In parallel, IT's answer on a CI identity for AWS
+(016).

@@ -25,6 +25,11 @@
   need a real role: PIs submit proposals and hold Explore subscriptions, staff drive
   Observe's browser. One identity per VU; identities are never shared across VUs, and the
   people submitting proposals are never the people operating Observe.
+- **Proposal loop** — the surge's proposal class: PIs from the standard-user pool submitting
+  against one Call for Proposals on an arrival-rate executor, so the tier's submissions per
+  hour is literal. One iteration is one submission: a new proposal built from nothing (program,
+  PI details, abstract, a defined observation, the proposal, a Science and a Team attachment)
+  or a retract/edit/resubmit of one the PI already holds.
 - **Execution VU** — a load-test virtual user impersonating one Observe server instance:
   service identity, faithful per-step call order and transport split, cadence as a
   parameter.

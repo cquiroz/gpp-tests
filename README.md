@@ -24,7 +24,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `fixtures/` | Files the suites upload: the proposal-attachment PDF both Playwright and k6 send through the ODB's REST route (`lib/attachments.js`, ticket 028). |
 | `stack/` | The ephemeral regression stack: `docker-compose.yml`, Caddy config, bootstrap scripts (spec §3). |
 | `tests/` | The Playwright journey (spec §5) and its support layer. Selectors are all in `tests/support/selectors.ts`. |
-| `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model), `execution.js` (Observe instances executing sequences, ticket 021) and `subscribers.js` (held websockets with churn, ticket 022), plus their libs, including the graphql-transport-ws client. |
+| `k6/` | The k6 suites: `regression.js` (scenario variants), `load.js` (the 200-VU model), `execution.js` (Observe instances executing sequences, ticket 021), `subscribers.js` (held websockets with churn, ticket 022) and `proposals.js` (PIs submitting proposals at a literal rate, ticket 017), plus their libs, including the graphql-transport-ws client and the standard-user pool. |
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | The AWS load target: `aws-run.sh` (the standard unattended run), `aws-first-run.sh` (the wizard behind it), `guard.sh`; plus the deferred Heroku design ([README](loadtest/README.md)). |
@@ -117,6 +117,23 @@ source stack/.env.generated && source stack/.env.standard-users
 SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscribers
 ```
 
+Proposals on their own — PIs from the standard-user pool submitting against one Call for
+Proposals at a literal rate (an arrival-rate executor; `dropped_iterations` is the number that
+says the rate was not met), each submission the whole lifecycle the ODB requires — program, PI
+details, abstract, a defined observation, the proposal, two attachments at realistic sizes —
+then retract/edit/resubmit churn (`k6/lib/proposals.js`,
+[ticket 017](wayfinder/tickets/017-standard-users-and-proposals-in-k6.md)):
+
+```bash
+source stack/.env.generated
+SUBMISSIONS_PER_HOUR=250 DURATION=10m npm run k6:proposals     # realistic tier; 500 is the ceiling
+```
+
+The pool itself (`stack/.env.standard-users.json`, 250 PIs and 4 staff by default) is written
+by `stack/scripts/create-standard-users.sh` at bootstrap; `POOL_PI_COUNT` / `POOL_STAFF_COUNT`
+size it, and it has to be at least as large as a run's VU count because each VU is its own
+identity.
+
 ## How the spec maps onto the code
 
 | Spec | Where |
@@ -150,6 +167,13 @@ SUBSCRIBERS=20 CHURN_VUS=5 DURATION=5m SESSION_SECONDS=120 npm run k6:subscriber
   required attachments through the odb's REST route; the e2e lifecycle (upload, submit, minted
   reference, retract — by API and through Explore's buttons) is back, and the spec asserts the
   submission email reached the stand-in. No email can leave the stack.
+- **Proposals at a rate ([ticket 017](wayfinder/tickets/017-standard-users-and-proposals-in-k6.md), 2026-10-06).**
+  Bootstrap fabricates a pool of 250 PIs and 4 staff in the SSO database, one identity per
+  load VU; `k6/proposals.js` has staff open a call and PIs submit against it on an
+  arrival-rate executor, each submission a program with a defined observation, two padded
+  attachments (2 MiB + 512 KiB) and the submit, with retract/edit/resubmit churn. First local
+  run at the realistic tier's 250 per hour: 17 submissions, none dropped, submit p95 0.96 s,
+  uploads p95 0.1 s. The subscriber VUs draw their identities from the same pool.
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
   [map](wayfinder/map-gpp-tests.md); the decision behind the order is
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).

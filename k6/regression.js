@@ -12,7 +12,7 @@ import { loginAsGuest, loginAsStandardUser } from "./lib/auth.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
 import { ObserveInstance, seedExecutableObservations, serviceSession } from "./lib/execution.js";
 import { observeBrowserFixture, observeBrowserSession } from "./lib/subscribers.js";
-import { proposalAttachmentsScenario } from "./lib/attachments.js";
+import { attach, awaitDefined, buildProposal, openCall, retractAndEdit, submit } from "./lib/proposals.js";
 import {
   calculatedResultsScenario,
   createObservationScenario,
@@ -90,13 +90,28 @@ export default async function () {
     Boolean(piProgramId) && observingModesScenario(pi, piProgramId),
   );
 
-  // The REST leg of a proposal submission (ticket 028): both required attachments uploaded
-  // to the PI's program and read back. Submission itself needs a call only staff can open —
-  // the k6 proposals scenario is ticket 017.
-  scenario("proposal-attachments", () =>
-    Boolean(piProgramId) &&
-    proposalAttachmentsScenario(pi, piProgramId, { label: `gpp-tests ${TESTID}` }),
-  );
+  // The proposal lifecycle (tickets 028 and 017), the GraphQL-level twin of
+  // tests/e2e/proposals.spec.ts scenarios 1, 2 and 4: staff open a call; the PI builds a
+  // program with a defined observation and a proposal against it, uploads the two required
+  // attachments through the REST route, submits (reference minted), retracts and edits.
+  // The surge's proposal loop (k6/proposals.js) runs exactly these steps at a rate.
+  const staff = loginAsStandardUser("TEST_STAFF");
+  if (!staff) {
+    fail(
+      "TEST_STAFF_REFRESH_TOKEN is not set: run stack/scripts/create-standard-users.sh and " +
+        "source the file it writes",
+    );
+  }
+  const callId = openCall(staff);
+  const label = `gpp-tests proposal ${TESTID}`;
+  const proposal = callId ? buildProposal(pi, { callId, label }) : undefined;
+  if (proposal) {
+    const attached = attach(pi, proposal, label);
+    const defined = awaitDefined(pi, proposal);
+    if (attached && defined && submit(pi, proposal)) {
+      retractAndEdit(pi, proposal, label);
+    }
+  }
 
   // One executed step, Observe's way, as the service identity (ticket 021): keeps the
   // execution mutations and the execution-config read understood by the -dev odb, the way

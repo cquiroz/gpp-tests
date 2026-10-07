@@ -140,8 +140,10 @@ Settled during charting (constraints for every ticket):
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
 manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
 OIDC role, or a runner inside `nl-vpc`), **023** (surge SLOs + verdict), **024** (telemetry
-stack, HITL), **027** (read production sizing, HITL). Order of build: 017 → 018/023,
-developed locally; 016 in parallel. 021 and 022 closed 2026-10-03, 028 closed 2026-10-05.
+stack, HITL), **027** (read production sizing, HITL). Order of build: 023 → 018, developed
+locally, each layer proven on AWS before composing; 016 in parallel. 021 and 022 closed
+2026-10-03, 028 closed 2026-10-05, 017 closed 2026-10-06 (every surge layer now exists on
+its own; 018 is blocked only on 016 and 023).
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
@@ -152,9 +154,17 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
   subscribers, event latency p95 78 ms, round trip p95 11 ms, ping p95 2 ms, nothing lost):
   event latency from the mutation's send p95 < 500 ms, round trip from its acknowledgement
   p95 < 250 ms, zero unanswered pings, zero lost events. 023 owns the file.
-- **Attachment upload leg of the surge model** — two uploads per submission (028). The
-  fixture is a 631-byte PDF; real science cases run to a few MB, so 017 decides whether to
-  pad, and the AWS wizard now prints the count and bytes a run uploaded.
+- **Attachment sizes in the surge model** — 017 pads the fixture to 2 MiB (science) and
+  512 KiB (team) per submission, an assumption, not a measurement
+  (`PROPOSAL_ATTACHMENT_SIZES` in `lib/attachments.js`, overridable per run). Confirm against
+  Explore's upload limit and real Phase I attachments at the next CfP close; the AWS wizard
+  prints the count and bytes a run uploaded.
+- **Deadline mix in the proposal loop** — 017's loop builds a new proposal per submission
+  with `RESUBMIT_SHARE` (0.3) of later submissions being retract/edit/resubmit, and every
+  proposal carries one observation it waits on obscalc for. At a real deadline most proposals
+  already exist and the hour is edits, uploads and submits; 018 may pre-seed proposals during
+  the ramp so the steady state is mostly churn, and the telemetry of the next CfP close
+  (`research/cfp-deadline-telemetry.md`) calibrates the share.
 - **Cross-VU fan-out lag** — an editor's mutation observed by *other* subscribers. 022 left a
   design: edits already carry the VU id and a timestamp in the subtitle, and all VUs share one
   k6 clock, so a collector VU subscribed across the subscriber programs can time any VU's edit

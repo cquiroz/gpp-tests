@@ -12,6 +12,10 @@
 #
 # Idempotent: users, roles and sessions are looked up before being created, so re-running
 # only re-mints the JWTs (they expire after an hour; sessions and users live with the stack).
+#
+# Two personas for the browser suite (TEST_PI, TEST_STAFF), then the pool for k6 (ticket 017):
+# POOL_PI_COUNT PIs and POOL_STAFF_COUNT staff written as JSON to
+# stack/.env.standard-users.json, one identity per load VU (POOL_PI_COUNT=0 skips it).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 load_generated_env
@@ -125,3 +129,89 @@ EOF
 log "wrote $STANDARD_USERS_ENV"
 log "pi:    $PI_USER_ID / $PI_ROLE_ID"
 log "staff: $STAFF_USER_ID / $STAFF_ROLE_ID"
+
+# ---------------------------------------------------------------------------------------
+# The standard-user pool (ticket 017): POOL_PI_COUNT PIs and POOL_STAFF_COUNT staff, one per
+# k6 VU, so the surge's proposal loop and its subscriber population never share an identity
+# (CONTEXT.md "Standard-user pool"). Same three rows per user as above, but set-based: one
+# psql round trip for the whole pool instead of three `docker exec`s per user, because
+# bootstrap runs this on every boot and 250 users must cost a second, not minutes.
+#
+# ORCID iDs are `0009-01xx-xxxx-xxxC`: a fabricated range far from the two personas above,
+# with the ISO-7064 mod-11-2 check digit computed here (research/sso-standard-user-fabrication.md
+# §1) — a bad digit does not fail the INSERT, it crashes refresh-token later.
+# ---------------------------------------------------------------------------------------
+POOL_PI_COUNT="${POOL_PI_COUNT:-250}"
+POOL_STAFF_COUNT="${POOL_STAFF_COUNT:-4}"
+
+# orcid_check <15 base digits> — the check digit, "X" for 10.
+orcid_check() {
+  local base="$1" total=0 i
+  for ((i = 0; i < ${#base}; i++)); do
+    total=$(( (total + ${base:i:1}) * 2 ))
+  done
+  local result=$(( (12 - total % 11) % 11 ))
+  if (( result == 10 )); then printf 'X'; else printf '%d' "$result"; fi
+}
+
+# pool_orcid <kind-digit> <index> — e.g. pool_orcid 1 7 → 0009-0100-0000-007C (PIs are 1,
+# staff 2). 15 base digits: 0009 01 K then the index zero-padded to 8 digits.
+pool_orcid() {
+  local base
+  base="$(printf '000901%d%08d' "$1" "$2")"
+  printf '%s-%s-%s-%s%s' "${base:0:4}" "${base:4:4}" "${base:8:4}" "${base:12:3}" "$(orcid_check "$base")"
+}
+
+# pool_values <kind-digit> <role> <count> <given> — VALUES rows for the temp table.
+pool_values() {
+  local kind="$1" role="$2" count="$3" given="$4" i sep=""
+  for ((i = 1; i <= count; i++)); do
+    printf "%s('%s','%s','%s','%s%04d','%s-%04d@gpp-test.internal',%d)" \
+      "$sep" "$(pool_orcid "$kind" "$i")" "$role" "$given" "Pool" "$i" "$(tr '[:upper:]' '[:lower:]' <<<"$given")" "$i" "$i"
+    sep=$',\n'
+  done
+}
+
+STANDARD_USERS_POOL="$STACK_DIR/.env.standard-users.json"
+if (( POOL_PI_COUNT > 0 || POOL_STAFF_COUNT > 0 )); then
+  log "fabricating the standard-user pool: $POOL_PI_COUNT PIs, $POOL_STAFF_COUNT staff"
+  # Users, roles and sessions are created only where missing (orcid_id is the key), then the
+  # whole pool is read back as one JSON document — the file k6 opens.
+  compose exec -T postgres psql -qtAX -U "${PG_USER:-jimmy}" -d lucuma-sso -v ON_ERROR_STOP=1 <<SQL > "$STANDARD_USERS_POOL.tmp"
+CREATE TEMP TABLE pool (orcid text, role_type text, given text, family text, email text, idx int);
+INSERT INTO pool VALUES
+$(pool_values 1 pi "$POOL_PI_COUNT" Pi)$( (( POOL_PI_COUNT > 0 && POOL_STAFF_COUNT > 0 )) && printf ',\n')$(pool_values 2 staff "$POOL_STAFF_COUNT" Staff);
+INSERT INTO lucuma_user (user_type, orcid_id, orcid_given_name, orcid_family_name, orcid_email)
+  SELECT 'standard', p.orcid, p.given, p.family, p.email FROM pool p
+  WHERE NOT EXISTS (SELECT 1 FROM lucuma_user u WHERE u.orcid_id = p.orcid);
+INSERT INTO lucuma_role (user_id, role_type)
+  SELECT u.user_id, p.role_type::lucuma_role_type FROM pool p JOIN lucuma_user u ON u.orcid_id = p.orcid
+  WHERE NOT EXISTS (SELECT 1 FROM lucuma_role r WHERE r.user_id = u.user_id AND r.role_type = p.role_type::lucuma_role_type);
+INSERT INTO lucuma_session (user_id, user_type, role_id)
+  SELECT u.user_id, 'standard', r.role_id FROM pool p
+  JOIN lucuma_user u ON u.orcid_id = p.orcid
+  JOIN lucuma_role r ON r.user_id = u.user_id AND r.role_type = p.role_type::lucuma_role_type
+  WHERE NOT EXISTS (SELECT 1 FROM lucuma_session s WHERE s.user_id = u.user_id AND s.role_id = r.role_id);
+SELECT json_build_object(
+  'cookieDomain', '$GPP_TEST_DOMAIN',
+  'pi', (SELECT coalesce(json_agg(json_build_object('userId', u.user_id, 'roleId', r.role_id, 'refreshToken', s.refresh_token) ORDER BY p.idx), '[]'::json)
+         FROM pool p JOIN lucuma_user u ON u.orcid_id = p.orcid
+         JOIN lucuma_role r ON r.user_id = u.user_id AND r.role_type = 'pi'
+         JOIN LATERAL (SELECT refresh_token FROM lucuma_session s WHERE s.user_id = u.user_id AND s.role_id = r.role_id LIMIT 1) s ON true
+         WHERE p.role_type = 'pi'),
+  'staff', (SELECT coalesce(json_agg(json_build_object('userId', u.user_id, 'roleId', r.role_id, 'refreshToken', s.refresh_token) ORDER BY p.idx), '[]'::json)
+         FROM pool p JOIN lucuma_user u ON u.orcid_id = p.orcid
+         JOIN lucuma_role r ON r.user_id = u.user_id AND r.role_type = 'staff'
+         JOIN LATERAL (SELECT refresh_token FROM lucuma_session s WHERE s.user_id = u.user_id AND s.role_id = r.role_id LIMIT 1) s ON true
+         WHERE p.role_type = 'staff'));
+SQL
+  # Only a complete document replaces the previous pool; a failed psql leaves the old file.
+  if [[ -s "$STANDARD_USERS_POOL.tmp" ]] && node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$STANDARD_USERS_POOL.tmp" 2>/dev/null; then
+    chmod 600 "$STANDARD_USERS_POOL.tmp"
+    mv "$STANDARD_USERS_POOL.tmp" "$STANDARD_USERS_POOL"
+    log "wrote $STANDARD_USERS_POOL"
+  else
+    mv "$STANDARD_USERS_POOL.tmp" "$STANDARD_USERS_POOL.failed" 2>/dev/null || true
+    die "the standard-user pool query produced no JSON (see $STANDARD_USERS_POOL.failed)"
+  fi
+fi

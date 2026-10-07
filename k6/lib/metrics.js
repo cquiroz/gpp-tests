@@ -52,6 +52,17 @@ export const wsUnansweredPings = new Counter("odb_ws_unanswered_pings");
 export const wsLostEvents = new Counter("odb_ws_lost_events");
 export const wsMessages = new Counter("odb_ws_messages");
 
+// The proposal loop (ticket 017): the surge's arrival-rate class.
+//
+//   gpp_proposal_submissions     — submissions that took (SUBMITTED, reference minted);
+//                                  `operation` = FirstSubmission or Resubmission.
+//   gpp_proposal_definition_wait — from creating a proposal's observation to the ODB calling
+//                                  it defined, i.e. how long obscalc keeps a PI from being
+//                                  able to submit. Setup cost, not the submit SLO's subject,
+//                                  but under a surge it is what the PI waits on.
+export const proposalSubmissions = new Counter("gpp_proposal_submissions");
+export const proposalDefinitionWait = new Trend("gpp_proposal_definition_wait", true);
+
 /**
  * Build the label set for a sample. Always includes the suite; `testid` only when the
  * escape hatch is open.

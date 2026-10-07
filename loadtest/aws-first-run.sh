@@ -653,11 +653,14 @@ ssh_to "$GEN_ID" "sudo sed -i '/gpp-test.internal/d' /etc/hosts && \
   | sudo tee -a /etc/hosts >/dev/null"
 say "generator resolves the stack at $TARGET_PRIVATE_IP"
 
-# The observing-modes scenario logs in as the fabricated PI (ticket 030). The file is
-# streamed target → laptop → generator and never printed or written locally.
+# The observing-modes scenario logs in as the fabricated PI (ticket 030), and the proposal
+# loop and the subscribers draw one identity per VU from the pool beside it (ticket 017).
+# Both files are streamed target → laptop → generator and never printed or written locally.
 ssh_to "$TARGET_ID" "cat ~/gpp-tests/stack/.env.standard-users" \
   | ssh_to "$GEN_ID" "umask 077 && cat > ~/gpp-tests/stack/.env.standard-users"
-say "the fabricated PI is on the generator"
+ssh_to "$TARGET_ID" "cat ~/gpp-tests/stack/.env.standard-users.json" \
+  | ssh_to "$GEN_ID" "umask 077 && cat > ~/gpp-tests/stack/.env.standard-users.json"
+say "the fabricated PI, staff and the standard-user pool are on the generator"
 pause
 
 # ── Stage 6 ───────────────────────────────────────────────────────────────

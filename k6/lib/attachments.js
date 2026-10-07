@@ -7,7 +7,9 @@ import { check } from "k6";
 import http from "k6/http";
 import {
   PROPOSAL_ATTACHMENT_FIXTURE,
+  PROPOSAL_ATTACHMENT_SIZES,
   attachmentUploadRequest,
+  padPdf,
   proposalAttachments,
 } from "../../lib/attachments.js";
 import { programAttachments } from "../../lib/odb-operations.js";
@@ -20,6 +22,42 @@ import { graphqlErrors, tags, writeDuration } from "./metrics.js";
  * iteration. The path is relative to this module.
  */
 export const PROPOSAL_ATTACHMENT_BYTES = open(`../../${PROPOSAL_ATTACHMENT_FIXTURE}`, "b");
+
+/**
+ * The surge model's upload sizes (ticket 017), overridable per run so a tier can be run with
+ * heavier or lighter files without a code change.
+ */
+const ATTACHMENT_BYTES = {
+  science: Number(__ENV.SCIENCE_ATTACHMENT_BYTES || PROPOSAL_ATTACHMENT_SIZES.science),
+  team: Number(__ENV.TEAM_ATTACHMENT_BYTES || PROPOSAL_ATTACHMENT_SIZES.team),
+};
+
+/**
+ * The padded bodies, built on first use and kept for the VU's lifetime. Lazy on purpose: a
+ * ramping-arrival-rate scenario initialises every VU up to `maxVUs`, and 2.5 MiB per VU that
+ * never runs is memory the generator does not have to spend.
+ *
+ * @type {Partial<Record<keyof typeof ATTACHMENT_BYTES, ArrayBuffer>>}
+ */
+const padded = {};
+
+/**
+ * The bytes to upload for one attachment type: the bare fixture, or the fixture padded to
+ * the model's size for that type.
+ *
+ * @param {import("../../lib/attachments.js").AttachmentType} attachmentType
+ * @param {boolean} pad
+ * @returns {ArrayBuffer}
+ */
+export function attachmentBody(attachmentType, pad) {
+  const size = ATTACHMENT_BYTES[/** @type {"science"|"team"} */ (attachmentType)];
+  if (!pad || !size) return PROPOSAL_ATTACHMENT_BYTES;
+  const key = /** @type {"science"|"team"} */ (attachmentType);
+  if (!padded[key]) {
+    padded[key] = padPdf(new Uint8Array(PROPOSAL_ATTACHMENT_BYTES), size).buffer;
+  }
+  return padded[key];
+}
 
 /**
  * Upload one attachment as the session's user. Returns the attachment id, or undefined on
@@ -78,13 +116,19 @@ export function uploadAttachment(session, file, opts = {}) {
  *
  * @param {{token: string}} session
  * @param {string} programId
- * @param {{scenario?: string, label?: string, measure?: boolean}} [opts]
+ * @param {{scenario?: string, label?: string, measure?: boolean, pad?: boolean}} [opts]
+ *   `pad` sends the model's realistic sizes instead of the bare fixture (the proposal loop
+ *   does; the regression suite does not)
  * @returns {boolean} whether both uploads landed and the program lists both types
  */
 export function proposalAttachmentsScenario(session, programId, opts = {}) {
   const scenario = opts.scenario || "proposal-attachments";
   const uploaded = proposalAttachments(opts.label).map((file) =>
-    uploadAttachment(session, { programId, ...file }, { scenario, measure: opts.measure }),
+    uploadAttachment(
+      session,
+      { programId, ...file, body: attachmentBody(file.attachmentType, Boolean(opts.pad)) },
+      { scenario, measure: opts.measure },
+    ),
   );
   if (uploaded.some((id) => !id)) return false;
 
