@@ -166,3 +166,35 @@ URL (today the stack must own `api.mailgun.net` and a JVM truststore to intercep
 **Not done.** Attachment *download* through the browser (presigned URLs carry the odb's
 us-east-1 signature). Finder charts and MOS masks (the helper takes any `attachmentType`;
 nothing uploads them yet). Padding the fixture to realistic sizes (017's call).
+
+## Update 2026-10-07: the truststore never built on the AWS target
+
+The first k6 regression to *submit* on AWS (ticket 017 added the lifecycle) answered HTTP 500
+"Internal server error" at `setProposalStatus`, with both uploads through the bucket green.
+The wizard's bootstrap log had the cause all along:
+
+```
+==> building the odb's truststore: image cacerts + Caddy root
+cp: cannot create regular file '/certs/cacerts.tmp': Permission denied
+==> truststore at /home/ubuntu/gpp-tests/stack/certs/cacerts
+```
+
+`java-truststore.sh` ran keytool inside the odb image as the image's user (uid 3624), which
+cannot write into a bind-mounted directory on a Linux host — it can on macOS, which is why
+every local run passed. The script swallowed the failure (`| grep -v … || true`) and its
+only check was that a `cacerts` existed: one did, because the wizard's rsync shipped the
+laptop's `stack/certs/` to the target. So the odb on AWS trusted the *laptop's* Caddy root,
+the TLS handshake to the stand-in for `api.mailgun.net` failed on every submission, and
+http4s turned that into a 500 (an `email_send_error` is the odb's own GraphQL error for a
+bad Mailgun *response*; a failed connection is an exception). The 2026-10-06 bucket-mode run
+was green only because nothing submitted yet.
+
+Fixed the same day: the build runs as the host user (`--user $(id -u):$(id -g)`), keeps the
+exit status, lists the alias back out of the new store before installing it atomically, and
+`die`s otherwise — so bootstrap stops instead of booting an odb that cannot submit. The
+wizard's rsync excludes `stack/certs` and `stack/keys`: each host mints its own. Verified
+locally: rebuilt store carries the Caddy root with the matching SHA-256 fingerprint, bootstrap
+end to end green, k6 regression green. **AWS rerun the same afternoon (16:13 UTC collect):**
+regression 114/114 checks, 14/14 scenarios, 0 GraphQL errors — the submission went through,
+reference minted, the two padded attachments (2,621,440 bytes) in the bucket and deleted at
+teardown. The stand-in received the submission email on the target.

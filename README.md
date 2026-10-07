@@ -173,7 +173,13 @@ identity.
   arrival-rate executor, each submission a program with a defined observation, two padded
   attachments (2 MiB + 512 KiB) and the submit, with retract/edit/resubmit churn. First local
   run at the realistic tier's 250 per hour: 17 submissions, none dropped, submit p95 0.96 s,
-  uploads p95 0.1 s. The subscriber VUs draw their identities from the same pool.
+  uploads p95 0.1 s. The subscriber VUs draw their identities from the same pool. The
+  lifecycle is green on AWS too (2026-10-07), after a truststore fix the first AWS submission
+  exposed ([ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md)).
+- **Watch item (2026-10-07): execution step overhead doubled on the day's odb image.** Six AWS
+  runs on the 3rd to 6th gave p95 570–650 ms; the 7th, with a new `-dev` odb digest and the
+  same parameters, gave p95 1163 ms, p99 2080 ms, every blocking point and every mutation
+  about twice as slow. One more run decides whether it is the image or the day.
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
   [map](wayfinder/map-gpp-tests.md); the decision behind the order is
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).
@@ -261,6 +267,13 @@ both live only as long as the stack does.
   `stack/certs/cacerts` (image CAs plus Caddy's root) *before* starting the odb; an odb started
   by hand before that file existed needs `npm run stack:up` again. What the odb handed to the
   stand-in is at `https://mail.gpp-test.internal/mailgun.log` (`tests/support/mail.ts` reads it).
+- **Submitting a proposal answers HTTP 500 "Internal server error", uploads fine.** The odb
+  could not complete the TLS handshake to the stack's Mailgun stand-in: the truststore it
+  boots with (`stack/certs/cacerts`) does not hold *this* stack's Caddy root. Bootstrap's log
+  will show `java-truststore.sh` failing — it now stops bootstrap rather than keeping a stale
+  store — or a `cacerts` copied in from another machine. Rebuild with
+  `bash stack/scripts/java-truststore.sh` and recreate the odb container. On 2026-10-07 the
+  AWS target had the laptop's store (synced with the repo) and every submission failed this way.
 - **An attachment upload answers 500.** The object store is down or the odb points elsewhere:
   `docker compose ps s3` in `S3_MODE=local`, the `s3proxy` logs in bucket mode; the odb's
   endpoint is `AWS_ENDPOINT_URL_S3` in its environment (`stack/docker-compose.yml`).

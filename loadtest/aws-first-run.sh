@@ -273,11 +273,15 @@ CONFIG
 }
 ssh_to()   { local id="$1"; shift; ssh -F "$SSH_CONFIG" "$id" "$@"; }
 scp_from() { scp -F "$SSH_CONFIG" "$1:$2" "$3"; }
+# stack/certs and stack/keys are each host's own: bootstrap mints them there, and Caddy's
+# root differs per stack, so the laptop's copies must not travel (the laptop's truststore
+# on the target made every proposal submission answer 500, 2026-10-07). An exclude also
+# protects the remote copy from --delete.
 rsync_to() {
   rsync -az --delete -e "ssh -F $REPO_DIR/$SSH_CONFIG" \
     --exclude node_modules --exclude .direnv --exclude stack/.cache \
     --exclude out --exclude test-results --exclude playwright-report \
-    --exclude 'stack/.env*' --exclude awskeys.txt \
+    --exclude 'stack/.env*' --exclude stack/certs --exclude stack/keys --exclude awskeys.txt \
     "$REPO_DIR/" "$1:~/gpp-tests/"
 }
 

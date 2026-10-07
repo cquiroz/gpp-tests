@@ -117,8 +117,8 @@ export function uploadAttachment(session, file, opts = {}) {
  * @param {{token: string}} session
  * @param {string} programId
  * @param {{scenario?: string, label?: string, measure?: boolean, pad?: boolean}} [opts]
- *   `pad` sends the model's realistic sizes instead of the bare fixture (the proposal loop
- *   does; the regression suite does not)
+ *   `pad` sends the model's realistic sizes instead of the bare fixture (the proposal
+ *   lifecycle does, in the regression and the surge alike)
  * @returns {boolean} whether both uploads landed and the program lists both types
  */
 export function proposalAttachmentsScenario(session, programId, opts = {}) {

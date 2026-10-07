@@ -78,8 +78,10 @@ had no free PI for is a submission the ODB never saw, so the literal rate did no
 fixture to `PROPOSAL_ATTACHMENT_SIZES` (science 2 MiB, team 512 KiB — an assumption; see the
 map) by appending one PDF comment line and a fresh `%%EOF`; the odb and versitygw store and
 list the padded size. k6 builds the padded bodies lazily per VU (`SCIENCE_ATTACHMENT_BYTES`,
-`TEAM_ATTACHMENT_BYTES` override), so idle pre-allocated VUs cost nothing; the regression
-suites keep sending the bare fixture.
+`TEAM_ATTACHMENT_BYTES` override), so idle pre-allocated VUs cost nothing. The k6
+regression's one submission uploads the padded sizes too (2.5 MiB per nightly run, through
+versitygw in CI and the real bucket on AWS), so the realistic REST leg is exercised every
+night; only the browser suite sends the bare fixture.
 
 **Parity.** `proposal-call`, `proposal-create` and `proposal-submit` now run on both sides;
 `proposal-retract` is k6-only with its reason (the e2e retracts inside scenario 4 and through
@@ -99,6 +101,11 @@ in the object store for the first run; each program owned by a distinct pool PI 
 `t_program_user`). Iterations take ~3.7 s median, so a dozen PIs cover the ceiling rate with
 room; a slower obscalc would show up in `gpp_proposal_definition_wait` first and
 `dropped_iterations` second.
+
+**On AWS (2026-10-07, after the truststore fix in ticket 028's update):** the regression's
+lifecycle passed on the target in bucket mode — 114 checks, the observation defined on the
+first poll (24 ms), 2.5 MiB through the proxy and the instance role. The proposal *profile*
+has not run on AWS yet.
 
 **Not done here.** An AWS stage for the proposal profile (018 composes it; the wizard already
 ships the pool to the generator). Pre-seeding proposals during the ramp so the steady state is
