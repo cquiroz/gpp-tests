@@ -169,12 +169,14 @@ lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
   design: edits already carry the VU id and a timestamp in the subtitle, and all VUs share one
   k6 clock, so a collector VU subscribed across the subscriber programs can time any VU's edit
   from the payload, no external store. Follow-up after v1.
-- **Execution overhead doubled on 2026-10-07** — AWS runs on the 3rd to 6th: step ODB overhead
-  p95 570–652 ms, RecordVisit p95 ~300 ms, per-mutation p95 ~53 ms. The 7th, same instance,
-  same cadence and instance count, new `-dev` odb and obscalc digests: p95 1163 ms, p99
-  2080 ms, RecordVisit p95 982 ms, per-mutation p95 142 ms. Still inside the provisional
-  budget (2 s / 5 s) but a 2× step; rerun once to tell the image from the day, then it is a
-  question for the odb team with the two digests (`out/aws-run-2026100{6,7}T*.log`).
+- **Execution overhead doubled on the 2026-10-07 odb builds — confirmed, for the odb team.**
+  Six AWS runs on the 3rd to 6th: step ODB overhead p95 570–652 ms, RecordVisit p95 ~300 ms,
+  every mutation p95 ~52 ms. Two runs on the 7th on two different `-dev` odb digests, same
+  parameters: p95 1163 and 1260 ms, RecordVisit p95 982 and 885 ms, every mutation p95
+  ~145 ms (median 28 → 52 ms). Inside the provisional budget, but a 2× step; candidates are
+  upstream #3154 (natchez → otel4s on every request) and #3145 (visits spend tellurics).
+  Handoff with digests, numbers and a bisect recipe: `research/execution-overhead-2026-10-07.md`.
+  Carlos carries it, as with 019.
 - **Trend-run threshold recalibration** — baselines reset once the real target exists.
 - **Post-deadline calibration** — capture telemetry at the next real CfP close (the
   H0-H4 queries in `research/cfp-deadline-telemetry.md`) and adjust the surge model;

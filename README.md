@@ -176,10 +176,12 @@ identity.
   uploads p95 0.1 s. The subscriber VUs draw their identities from the same pool. The
   lifecycle is green on AWS too (2026-10-07), after a truststore fix the first AWS submission
   exposed ([ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md)).
-- **Watch item (2026-10-07): execution step overhead doubled on the day's odb image.** Six AWS
-  runs on the 3rd to 6th gave p95 570–650 ms; the 7th, with a new `-dev` odb digest and the
-  same parameters, gave p95 1163 ms, p99 2080 ms, every blocking point and every mutation
-  about twice as slow. One more run decides whether it is the image or the day.
+- **Finding (2026-10-07): execution step overhead doubled on the day's odb builds.** Six AWS
+  runs on the 3rd to 6th gave p95 570–650 ms; two runs on the 7th, on two different `-dev`
+  odb digests with the same parameters, gave p95 1163 and 1260 ms, every mutation about twice
+  as slow and RecordVisit three times. Still inside the provisional budget; handed to the odb
+  team with digests and candidate commits in
+  [`research/execution-overhead-2026-10-07.md`](research/execution-overhead-2026-10-07.md).
 - **Now:** stress testing first. Open work, in order, is listed under *Frontier now* in the
   [map](wayfinder/map-gpp-tests.md); the decision behind the order is
   [ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md).

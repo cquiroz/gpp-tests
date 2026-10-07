@@ -521,7 +521,24 @@ else
   TARGET_ID="$(_existing TARGET_ID)"; GEN_ID="$(_existing GEN_ID)"
   owned_or_die "$TARGET_ID" "$GEN_ID"
   say "reusing $TARGET_ID / $GEN_ID from a previous run"
-  awsx ec2 start-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null 2>&1 || true
+  # A pair that the previous run has only just told to stop is still `stopping`, and AWS
+  # refuses to start a stopping instance. The first version swallowed that refusal and then
+  # waited ten minutes for "running" (2026-10-07, a rerun straight after a run). So: wait
+  # for the stop to finish, start, and let a refused start be the error it is.
+  states="$(awsx ec2 describe-instances --instance-ids "$TARGET_ID" "$GEN_ID" \
+    --query 'Reservations[].Instances[].State.Name' --output text | tr '\t' ' ')"
+  if [[ "$states" == *stopping* || "$states" == *shutting-down* ]]; then
+    say "the pair is still stopping from the previous run ($states) — waiting for it to finish"
+    awsx ec2 wait instance-stopped --instance-ids "$TARGET_ID" "$GEN_ID"
+    states="stopped stopped"
+  fi
+  if [[ "$states" == *stopped* ]]; then
+    awsx ec2 start-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null \
+      || { warn "AWS refused to start $TARGET_ID / $GEN_ID (states: $states)"; exit 1; }
+  elif [[ "$states" != "running running" ]]; then
+    warn "unexpected instance states for $TARGET_ID / $GEN_ID: $states"
+    exit 1
+  fi
   awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
 fi
 
