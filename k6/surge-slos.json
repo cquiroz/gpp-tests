@@ -1,0 +1,116 @@
+{
+  "$comment": "Surge SLOs (ticket 023): the absolute pass criteria for each class of surge traffic, decided in ticket 020. Every `thresholds` entry is a k6 threshold expression and the `metric` is the k6 metric or sub-metric it applies to, so the scripts arm these verbatim (k6/lib/slos.js) and tools/surge-verdict.js reads the same file back against a k6 summary export. The trend run's ledger-derived thresholds are a different thing and do not live here. A class is added by adding a key under `classes` and naming it in the script that exercises it.",
+  "source": "wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md",
+  "classes": {
+    "execution": {
+      "title": "Execution (Observe)",
+      "provisional": "Stall budget chosen by this project; Observe developers have not yet seen real numbers (ticket 020).",
+      "slos": [
+        {
+          "name": "step ODB overhead",
+          "metric": "odb_step_overhead",
+          "thresholds": ["p(95)<2000", "p(99)<5000"]
+        },
+        {
+          "name": "per-mutation latency",
+          "metric": "odb_write_duration{scenario:execution}",
+          "thresholds": ["p(95)<500", "p(99)<2000"]
+        },
+        {
+          "name": "execution-config fetch",
+          "metric": "odb_read_duration{operation:ExecutionConfig}",
+          "thresholds": ["p(95)<3000"]
+        },
+        {
+          "name": "requests that never completed (timeouts, Observe's is 20 s)",
+          "metric": "odb_graphql_errors{scenario:execution,status:0}",
+          "thresholds": ["count==0"]
+        }
+      ]
+    },
+    "proposals": {
+      "title": "Proposals (Call for Proposals deadline)",
+      "provisional": "Submit latency chosen by this project (ticket 020); the arrival rate is the tier's literal claim (ticket 017).",
+      "slos": [
+        {
+          "name": "proposal submit",
+          "metric": "odb_write_duration{operation:SetProposalStatus}",
+          "thresholds": ["p(95)<2000"]
+        },
+        {
+          "name": "arrival rate met (no submission k6 had no free PI for)",
+          "metric": "dropped_iterations{scenario:proposals}",
+          "thresholds": ["count==0"]
+        }
+      ]
+    },
+    "regular": {
+      "title": "Regular operations (Explore read/write mix)",
+      "provisional": "The spec's absolute caps (§6); the nightly trend run tightens them from its ledger instead of using these.",
+      "slos": [
+        {
+          "name": "open a program (reads)",
+          "metric": "odb_read_duration{scenario:read-mix}",
+          "thresholds": ["p(95)<2000"]
+        },
+        {
+          "name": "calculated-results poll (reads)",
+          "metric": "odb_read_duration{scenario:calculated-results}",
+          "thresholds": ["p(95)<2000"]
+        },
+        {
+          "name": "edit an observation (writes)",
+          "metric": "odb_write_duration{scenario:edit-observation}",
+          "thresholds": ["p(95)<5000"]
+        },
+        {
+          "name": "create an observation (writes)",
+          "metric": "odb_write_duration{scenario:create-observation}",
+          "thresholds": ["p(95)<5000"]
+        },
+        {
+          "name": "create a program (writes)",
+          "metric": "odb_write_duration{scenario:create-program}",
+          "thresholds": ["p(95)<5000"]
+        }
+      ]
+    },
+    "subscriptions": {
+      "title": "Subscriptions (held websockets)",
+      "provisional": "Picked from ticket 022's first native run (2026-10-04: event latency p95 78 ms, round trip p95 11 ms, nothing lost).",
+      "slos": [
+        {
+          "name": "event latency (mutation sent to event received)",
+          "metric": "odb_ws_event_latency",
+          "thresholds": ["p(95)<500"]
+        },
+        {
+          "name": "round trip (mutation acknowledged to event received)",
+          "metric": "odb_ws_round_trip",
+          "thresholds": ["p(95)<250"]
+        },
+        {
+          "name": "lost events",
+          "metric": "odb_ws_lost_events",
+          "thresholds": ["count==0"]
+        },
+        {
+          "name": "unanswered pings",
+          "metric": "odb_ws_unanswered_pings",
+          "thresholds": ["count==0"]
+        }
+      ]
+    },
+    "errors": {
+      "title": "Errors (every class)",
+      "provisional": "Error rate below 1 % (ticket 020). Measured on k6 checks, not http_req_failed: the odb answers a rejected operation with HTTP 200 and an errors array.",
+      "slos": [
+        {
+          "name": "operations that succeeded",
+          "metric": "checks",
+          "thresholds": ["rate>0.99"]
+        }
+      ]
+    }
+  }
+}
