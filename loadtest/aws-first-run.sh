@@ -214,7 +214,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 
-TOTAL_STAGES=12
+TOTAL_STAGES=13
 
 # The compose stack on one EC2 instance, driven by k6 from a second one, by hand
 # (research/aws-load-target-options.md phase 2) — under NOIRLab's launch procedure for the
@@ -396,6 +396,11 @@ ask AWS_REGION  "AWS region [us-west-2]:"
 [[ -n "$AWS_REGION" ]] || AWS_REGION="us-west-2"
 ask AWS_PROFILE "AWS CLI profile [gpp-tests]:"
 [[ -n "$AWS_PROFILE" ]] || AWS_PROFILE="gpp-tests"
+# `none`: no profile at all — the credentials are in the environment, as the workflow's OIDC
+# role puts them (ticket 016). awsx and the ssh ProxyCommand then pass no --profile. The
+# variable is un-exported first: the AWS CLI reads AWS_PROFILE from the environment too, and
+# an exported "none" would send it looking for a profile of that name.
+if [[ "$AWS_PROFILE" == "none" ]]; then unset AWS_PROFILE; AWS_PROFILE=""; fi
 
 CALLER_ARN="$(awsx sts get-caller-identity --query Arn --output text 2>/dev/null || true)"
 if [[ -z "$CALLER_ARN" ]]; then
@@ -428,6 +433,10 @@ S3_BUCKET="${S3_BUCKET:-noirlab-gpp-tests}"
 S3_PREFIX="gpp-tests/aws-$(date -u +%Y%m%dT%H%M%SZ)"
 if awsx s3api head-bucket --bucket "$S3_BUCKET" >/dev/null 2>&1; then
   say "bucket:   s3://$S3_BUCKET/$S3_PREFIX  (this run's attachments; deleted at teardown)"
+  # Saved so loadtest/aws-teardown.sh (the workflow's always() backstop) can delete the
+  # prefix if this process never reaches its own teardown.
+  write_env S3_BUCKET "$S3_BUCKET"
+  write_env S3_PREFIX "$S3_PREFIX"
 else
   warn "cannot see s3://$S3_BUCKET from this profile — the stack will use its own object store (S3_MODE=local)"
   S3_BUCKET=""
@@ -549,7 +558,7 @@ say "waiting for both to register with SSM"
 wait_for_ssm "$TARGET_ID"
 wait_for_ssm "$GEN_ID"
 say "target $TARGET_ID (private $TARGET_PRIVATE_IP) · generator $GEN_ID — both Online in SSM"
-warn "both are billing from now until stage 12 (or the ${MAX_HOURS}h safety stop)."
+warn "both are billing from now until stage 13 (or the ${MAX_HOURS}h safety stop)."
 pause
 
 # ── Stage 4 ───────────────────────────────────────────────────────────────
@@ -627,8 +636,34 @@ if [[ -n "$S3_BUCKET" ]]; then
   say "attachments: s3://$S3_BUCKET/$S3_PREFIX through the proxy and the instance role"
 fi
 
+# The standard-user pool (ticket 017) is indexed by test-wide VU id, and a composed run hands
+# ids out across every scenario from one counter, so for the surge (ticket 018) each kind must
+# cover the run's whole VU count — 458 in the ceiling tier. 500 of each costs two INSERTs a
+# user; the standalone profiles keep the script's defaults (250 PIs, 4 staff).
+POOL_ENV=""
+if [[ "${RUN_SURGE:-}" =~ ^([Yy]|1|true) || -n "${POOL_PI_COUNT:-}${POOL_STAFF_COUNT:-}" ]]; then
+  POOL_ENV="POOL_PI_COUNT=${POOL_PI_COUNT:-500} POOL_STAFF_COUNT=${POOL_STAFF_COUNT:-500}"
+  say "standard-user pool: ${POOL_PI_COUNT:-500} PIs, ${POOL_STAFF_COUNT:-500} staff (sized for the surge)"
+fi
+
+# Pinned images, when asked: ODB_IMAGE / OBSCALC_IMAGE as the compose file takes them
+# (`registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:…`), so two runs can hit the same
+# build on different days, or a known-good build while a regression is bisected
+# (research/execution-overhead-2026-10-07.md). Unset, the stack pulls the day's -dev images.
+IMAGE_ENV="${ODB_IMAGE:+ODB_IMAGE=$ODB_IMAGE} ${OBSCALC_IMAGE:+OBSCALC_IMAGE=$OBSCALC_IMAGE}"
+[[ -z "${ODB_IMAGE:-}${OBSCALC_IMAGE:-}" ]] || say "pinned images: ${ODB_IMAGE:-} ${OBSCALC_IMAGE:-}"
+# The odb and obscalc are one codebase sharing one database and its migrations: pinning one
+# and pulling the other's `latest` boots a newer obscalc that migrates the schema past what the
+# older odb knows, and the odb then answers 500 to calculated results, subtitle edits and
+# recordVisit (2026-10-08, the first pinned run — green boot, red regression, $1 wasted). The
+# two digests of one build are in that run's `out/images-aws-<stamp>.json` or wizard log.
+if [[ -n "${ODB_IMAGE:-}" && -z "${OBSCALC_IMAGE:-}" || -z "${ODB_IMAGE:-}" && -n "${OBSCALC_IMAGE:-}" ]]; then
+  warn "ODB_IMAGE and OBSCALC_IMAGE must be pinned together (same build); only one is set"
+  [[ -n "${ALLOW_MIXED_IMAGES:-}" ]] || exit 1
+fi
+
 say "booting the stack"
-ssh_to "$TARGET_ID" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS $S3_ENV bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
+ssh_to "$TARGET_ID" "HEROKU_API_KEY='$HEROKU_API_KEY' $LIMITS $S3_ENV $POOL_ENV $IMAGE_ENV bash -lc 'cd ~/gpp-tests && sg docker -c \"stack/scripts/bootstrap.sh\"'"
 say ""
 say "the stack is up, its readiness checks passed, and the standard users are fabricated"
 pause
@@ -691,9 +726,13 @@ say "GraphQL mix, TLS through Caddy, and the target-host guard accepting"
 say "*.gpp-test.internal. A failure here is cheap."
 printf '\n'
 
+# GITHUB_RUN_ID, when the workflow is driving (ticket 016), gives every k6 run the workflow's
+# run identity (`load-<run id>`, lib/run-identity.js) — the same string the job's Grafana
+# annotations carry — instead of `load-local`.
 K6_ENV="SUITE=load \
 ODB_GRAPHQL_URL=https://odb.gpp-test.internal/odb \
-SSO_URL=https://sso.gpp-test.internal"
+SSO_URL=https://sso.gpp-test.internal \
+${GITHUB_RUN_ID:+GITHUB_RUN_ID=$GITHUB_RUN_ID}"
 
 # Asked once, here, so the smoke, regression and load runs all stream. The credentials are
 # proven from the generator with tools/verify-metrics.sh before anything relies on them:
@@ -746,8 +785,8 @@ ssh_to "$GEN_ID" "cd ~/gpp-tests && . out/grafana.env && $K6_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
   MIN_CHECK_RATE=0.95 k6 run $GRAFANA_ARGS k6/load.js" || {
     warn "the smoke run failed — fix this before going further"
-    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
-    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $TARGET_ID"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $TARGET_ID"
     note "    then: cd ~ubuntu/gpp-tests && sudo docker compose -f stack/docker-compose.yml logs odb"
     exit 1
   }
@@ -775,7 +814,7 @@ if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.st
   say ""
   say "regression green on AWS"
 else
-  warn "the regression suite failed — its log is collected in stage 11"
+  warn "the regression suite failed — its log is collected in stage 12"
   confirm "Carry on to the load profile anyway?" CONTINUE_AFTER_FAILURE n || { say "Stopping here — nothing torn down."; exit 1; }
 fi
 pause
@@ -825,7 +864,7 @@ if confirm "Run the execution profile now ($EXEC_INSTANCES instances, $EXEC_MINU
     < /dev/null > out/k6-execution.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
     say "running detached on the generator since $(date -u +%H:%M:%SZ); following the log."
     note "Ctrl-C stops the tail, not the run. Re-attach with:"
-    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
     note "    then: tail -f ~ubuntu/gpp-tests/out/k6-execution.log"
     printf '\n'
     follow_k6 "$GEN_ID" gpp-tests/out/k6-execution.log
@@ -878,7 +917,7 @@ if confirm "Run the subscribers profile now ($SUB_STEADY steady + $SUB_CHURN chu
     < /dev/null > out/k6-subscribers.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
     say "running detached on the generator since $(date -u +%H:%M:%SZ); following the log."
     note "Ctrl-C stops the tail, not the run. Re-attach with:"
-    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
     note "    then: tail -f ~ubuntu/gpp-tests/out/k6-subscribers.log"
     printf '\n'
     follow_k6 "$GEN_ID" gpp-tests/out/k6-subscribers.log
@@ -893,6 +932,69 @@ else
 fi
 
 # ── Stage 10 ──────────────────────────────────────────────────────────────
+stage "The surge — the end of a Call for Proposals, every layer at once, 75 minutes"
+say "k6/surge.js (ticket 018): the regular-operations guest mix, PIs submitting"
+say "proposals at the tier's literal rate, Explore tabs holding subscriptions,"
+say "Observe instances executing sequences and staff with Observe's browser open,"
+say "over a 10/60/5-minute ramp, steady state and drain. Every class's surge SLO"
+say "is armed from k6/surge-slos.json; the verdict is read at collect time. The"
+say "odb is sampled on the target throughout."
+printf '\n'
+
+RAN_SURGE=""
+SURGE_TIER="${SURGE_TIER:-realistic}"
+SURGE_RAMP="${RAMP_MINUTES:-10}"
+SURGE_STEADY="${STEADY_MINUTES:-60}"
+SURGE_DRAIN="${DRAIN_MINUTES:-5}"
+SURGE_MINUTES=$(( SURGE_RAMP + SURGE_STEADY + SURGE_DRAIN ))
+note "Enter skips this stage (the prompt is y/N) — type y to run it."
+if confirm "Run the surge now ($SURGE_TIER tier, $SURGE_RAMP+$SURGE_STEADY+$SURGE_DRAIN minutes)?" RUN_SURGE n; then
+  # The proposals executor lets a submission in flight finish (four minutes), then the
+  # collect stage: an hour's margin on top of the profile.
+  say "re-arming the safety stop on both instances: $((SURGE_MINUTES + 60)) minutes from now"
+  for id in "$TARGET_ID" "$GEN_ID"; do
+    ssh_to "$id" "sudo shutdown -c 2>/dev/null; sudo shutdown -P +$((SURGE_MINUTES + 60))" >/dev/null 2>&1 \
+      || warn "could not re-arm the safety stop on $id — watch its uptime"
+  done
+
+  SAMPLE_UNTIL="\$(( \$(date +%s) + $((SURGE_MINUTES * 60 + 600)) ))"
+  ssh_to "$TARGET_ID" "mkdir -p ~/gpp-tests/out && setsid -f sh -c \
+    'end=$SAMPLE_UNTIL; while [ \$(date +%s) -lt \$end ]; do echo \"\$(date -u +%FT%TZ) \$(sudo docker stats --no-stream --format \"{{.Name}} {{.MemUsage}} {{.CPUPerc}}\" | tr \"\\n\" \";\")\"; sleep 30; done' \
+    < /dev/null > ~/gpp-tests/out/odb-stats-surge.log 2>&1; sleep 1" \
+    || warn "could not start the memory sampler on the target"
+  say "sampling container memory on the target every 30 s (started $(date -u +%H:%M:%SZ))"
+
+  # Every identity the layers need is on the generator: the pool (PIs and staff), the service
+  # JWT (Observe instances); guests come from SSO. Observe's cadence is its real one here
+  # (60–120 s per step, the script's default) unless SURGE_STEP_SECONDS_MIN/MAX say
+  # otherwise — stage 8's compressed cadence reads the execution path, the surge makes the
+  # claim. The tier sets the populations; any of them can be overridden by name.
+  if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && \
+    nohup sh -c '. stack/.env.standard-users; . stack/.env.service; . out/grafana.env; exec env $K6_ENV OTEL_ENVIRONMENT=aws-loadtest \
+    SURGE_TIER=$SURGE_TIER RAMP_MINUTES=$SURGE_RAMP STEADY_MINUTES=$SURGE_STEADY DRAIN_MINUTES=$SURGE_DRAIN \
+    STEP_SECONDS_MIN=${SURGE_STEP_SECONDS_MIN:-60} STEP_SECONDS_MAX=${SURGE_STEP_SECONDS_MAX:-120} \
+    ${SUBMISSIONS_PER_HOUR:+SUBMISSIONS_PER_HOUR=$SUBMISSIONS_PER_HOUR} ${EXPLORE_SUBSCRIBERS:+EXPLORE_SUBSCRIBERS=$EXPLORE_SUBSCRIBERS} \
+    ${SURGE_OBSERVE_INSTANCES:+OBSERVE_INSTANCES=$SURGE_OBSERVE_INSTANCES} ${OBSERVE_BROWSERS:+OBSERVE_BROWSERS=$OBSERVE_BROWSERS} \
+    ${REGULAR_VUS:+REGULAR_VUS=$REGULAR_VUS} ${MAX_PIS:+MAX_PIS=$MAX_PIS} \
+    k6 run $GRAFANA_ARGS --summary-export out/k6-surge-summary.json k6/surge.js' \
+    < /dev/null > out/k6-surge.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
+    say "running detached on the generator since $(date -u +%H:%M:%SZ); following the log."
+    note "Ctrl-C stops the tail, not the run. Re-attach with:"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
+    note "    then: tail -f ~ubuntu/gpp-tests/out/k6-surge.log"
+    printf '\n'
+    follow_k6 "$GEN_ID" gpp-tests/out/k6-surge.log
+  else
+    warn "k6 did not start on the generator — the end of its log:"
+    ssh_to "$GEN_ID" "tail -n 20 gpp-tests/out/k6-surge.log" || true
+  fi
+  RAN_SURGE=1
+  pause "Run finished — press Enter to continue"
+else
+  say "skipped the surge"
+fi
+
+# ── Stage 11 ──────────────────────────────────────────────────────────────
 stage "The full load profile — 0→50→200 VUs, ~40 minutes"
 say "OTEL_ENVIRONMENT=aws-loadtest tags the summary as its own environment, so"
 say "these numbers never blend into a Heroku baseline."
@@ -919,7 +1021,7 @@ if confirm "Run the 40-minute load profile now?" RUN_LOAD n; then
     < /dev/null > out/k6-run.log 2>&1 & sleep 5; pgrep -x k6 >/dev/null"; then
     say "running detached on the generator; following the log."
     note "Ctrl-C stops the tail, not the run. Re-attach with:"
-    note "  aws --region $AWS_REGION --profile $AWS_PROFILE ssm start-session --target $GEN_ID"
+    note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
     note "    then: tail -f ~ubuntu/gpp-tests/out/k6-run.log"
     printf '\n'
     # `pgrep -x k6` matches the k6 binary only. The earlier `pgrep -f 'k6 run'` also matched
@@ -936,9 +1038,34 @@ else
   say "skipped the load profile"
 fi
 
-# ── Stage 11 ──────────────────────────────────────────────────────────────
+# ── Stage 12 ──────────────────────────────────────────────────────────────
 stage "Collect the numbers"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+# The surge verdict (ticket 023): a run's summary read against k6/surge-slos.json, one table
+# per class, printed here and saved beside the JSON. A breach is annotated in Grafana only
+# when the annotation credentials are in the environment (GRAFANA_URL and
+# GRAFANA_ANNOTATIONS_TOKEN — the remote-write credentials do not reach that API).
+verdict_for() { # verdict_for SUMMARY CLASSES
+  local summary="$1" classes="$2" md="${1%.json}-verdict.md" breaches
+  [[ -f "$summary" ]] || return 0
+  node tools/surge-verdict.js --no-fail --classes="$classes" --out="$md" "$summary" \
+    || { warn "could not render the surge verdict for $summary"; return 0; }
+  say "saved $md"
+  breaches="$(node tools/surge-verdict.js --breaches --classes="$classes" "$summary")"
+  if [[ -n "$breaches" ]]; then
+    if [[ -n "${GRAFANA_URL:-}" && -n "${GRAFANA_ANNOTATIONS_TOKEN:-}" ]]; then
+      node tools/grafana-annotate.js --kind=breach --suite=load --breach="$breaches" || true
+    else
+      note "breach not annotated in Grafana: GRAFANA_URL / GRAFANA_ANNOTATIONS_TOKEN not set"
+    fi
+  fi
+}
+# Which build every number below belongs to: bootstrap records each service's image digest on
+# the target. Runs on different days pull different -dev images, so this is what makes two
+# runs comparable (or explains why they are not).
+scp_from "$TARGET_ID" "gpp-tests/out/images.json" "out/images-aws-$STAMP.json" 2>/dev/null \
+  && say "saved out/images-aws-$STAMP.json (image digests)" || warn "no image digests to collect"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression-summary.json" "out/k6-aws-regression-$STAMP.json" 2>/dev/null \
   && say "saved out/k6-aws-regression-$STAMP.json" || warn "no regression summary to collect"
 scp_from "$GEN_ID" "gpp-tests/out/k6-regression.log" "out/k6-aws-regression-$STAMP.log" 2>/dev/null || true
@@ -977,6 +1104,8 @@ if [[ -n "$RAN_EXEC" ]]; then
   } catch (_e) { console.log("  odb memory         : no samples"); }
   ' || warn "could not summarise the execution run — the raw JSON is in out/"
   printf '\n'
+  verdict_for "out/k6-aws-execution-$STAMP.json" errors,execution
+  printf '\n'
   note "A flat odb memory line closes the ticket 021 watch item; a steady climb is a"
   note "finding for the odb team before any surge run. The samples are in the stats log."
 fi
@@ -1008,6 +1137,56 @@ if [[ -n "$RAN_SUBS" ]]; then
   } catch (_e) { console.log("  odb memory         : no samples"); }
   ' || warn "could not summarise the subscribers run — the raw JSON is in out/"
   printf '\n'
+  verdict_for "out/k6-aws-subscribers-$STAMP.json" errors,subscriptions
+  printf '\n'
+fi
+
+if [[ -n "$RAN_SURGE" ]]; then
+  SURGE_OUT="out/k6-aws-surge-$SURGE_TIER-$STAMP"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-surge-summary.json" "$SURGE_OUT.json" 2>/dev/null \
+    && say "saved $SURGE_OUT.json" || warn "no surge summary to collect"
+  scp_from "$GEN_ID" "gpp-tests/out/k6-surge.log" "$SURGE_OUT.log" 2>/dev/null || true
+  scp_from "$TARGET_ID" "gpp-tests/out/odb-stats-surge.log" "out/odb-stats-surge-aws-$STAMP.log" 2>/dev/null \
+    && say "saved out/odb-stats-surge-aws-$STAMP.log" || warn "no memory samples to collect"
+  # The server side of the story, while the stack is still up: the odb's log without its
+  # per-event channel chatter (what it refused, what it threw), and what Postgres was doing
+  # (the 2026-10-08 run saturated it at ~12 cores with nothing in these files to say why).
+  ssh_to "$TARGET_ID" "sudo docker logs --tail 20000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
+    > "out/odb-log-surge-aws-$STAMP.log" 2>/dev/null \
+    && say "saved out/odb-log-surge-aws-$STAMP.log ($(wc -l < "out/odb-log-surge-aws-$STAMP.log" | tr -d ' ') lines)" \
+    || warn "could not collect the odb log"
+  ssh_to "$TARGET_ID" "sudo docker exec gpp-tests-postgres-1 psql -U jimmy -d lucuma-odb -c \
+    'select state, wait_event_type, count(*) from pg_stat_activity group by 1,2 order by 3 desc' -c \
+    'select left(query, 160) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15' -c \
+    'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15'" \
+    > "out/pg-activity-surge-aws-$STAMP.txt" 2>/dev/null \
+    && say "saved out/pg-activity-surge-aws-$STAMP.txt" || warn "could not read pg_stat_activity"
+  printf '\n'
+
+  [[ -f "$SURGE_OUT.json" ]] && node --input-type=commonjs -e '
+  const fs = require("fs");
+  const s = require("./'"$SURGE_OUT"'.json");
+  const m = s.metrics ?? {};
+  const p = (k, q) => m[k]?.[q]?.toFixed(0) ?? "—";
+  const c = (k) => m[k]?.count ?? 0;
+  console.log("  tier               : '"$SURGE_TIER"' ('"$SURGE_RAMP"'+'"$SURGE_STEADY"'+'"$SURGE_DRAIN"' min) on '"$TARGET_TYPE"' (generator '"$GEN_TYPE"')");
+  console.log("  proposals          :", c("gpp_proposal_submissions{operation:FirstSubmission}"), "first submissions ·", c("gpp_proposal_submissions{operation:Resubmission}"), "resubmissions · dropped", c("dropped_iterations{scenario:proposals}"), "· submit p95", p("odb_write_duration{operation:SetProposalStatus}", "p(95)"), "ms");
+  console.log("  execution          :", c("gpp_execution_steps"), "steps · overhead p95", p("odb_step_overhead", "p(95)"), "ms · p99", p("odb_step_overhead", "p(99)"), "ms · mutation p95", p("odb_write_duration{scenario:execution}", "p(95)"), "ms");
+  console.log("  subscriptions      :", c("odb_ws_connections"), "sockets · event latency p95", p("odb_ws_event_latency", "p(95)"), "ms · round trip p95", p("odb_ws_round_trip", "p(95)"), "ms · lost", c("odb_ws_lost_events"), "· reconnects", c("odb_ws_reconnects"));
+  console.log("  regular            : open program p95", p("odb_read_duration{scenario:read-mix}", "p(95)"), "ms · edit p95", p("odb_write_duration{scenario:edit-observation}", "p(95)"), "ms · create obs p95", p("odb_write_duration{scenario:create-observation}", "p(95)"), "ms");
+  console.log("  http               :", c("http_reqs"), "requests · p95", p("http_req_duration", "p(95)"), "ms · checks", ((m.checks?.value ?? 0) * 100).toFixed(2) + "% · graphql errors", c("odb_graphql_errors"));
+  try {
+    const lines = fs.readFileSync("./out/odb-stats-surge-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
+    const odb = lines.map((l) => l.split(";").find((x) => x.includes("odb-1")) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
+    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+  } catch (_e) { console.log("  odb memory         : no samples"); }
+  ' || warn "could not summarise the surge run — the raw JSON is in out/"
+  printf '\n'
+  # The surge exercises every class, so the verdict is the whole file.
+  verdict_for "$SURGE_OUT.json" errors,execution,proposals,regular,subscriptions
+  printf '\n'
+  note "This is the verdict ticket 018 records per tier; the figures behind every class are"
+  note "provisional (k6/surge-slos.json says who still has to agree each one)."
 fi
 
 if [[ -n "$RAN_LOAD" ]]; then
@@ -1031,13 +1210,15 @@ if [[ -n "$RAN_LOAD" ]]; then
   ' || warn "could not summarise — the raw JSON is in out/"
 
   printf '\n'
+  verdict_for "out/k6-aws-$STAMP.json" errors,regular
+  printf '\n'
   note "No Heroku baseline exists yet (M4 unprovisioned), so this is an absolute"
   note "number on known hardware rather than a comparison. Keep the JSON: it is a"
   note "data point, and stage 3's instance types are what produced it."
 fi
 pause
 
-# ── Stage 12 ──────────────────────────────────────────────────────────────
+# ── Stage 13 ──────────────────────────────────────────────────────────────
 stage "Tear down — the stage that decides the bill"
 owned_or_die "$TARGET_ID" "$GEN_ID"
 warn "Two instances are still running: $TARGET_ID and $GEN_ID"

@@ -22,11 +22,13 @@
     "verify:operations": "node tools/verify-operations.js",
     "thresholds": "node tools/compute-thresholds.js",
     "summary": "node tools/write-run-summary.js",
+    "verdict": "node tools/surge-verdict.js",
     "k6:regression": "k6 run --summary-export out/k6-summary.json k6/regression.js",
     "k6:load": "k6 run --summary-export out/k6-summary.json k6/load.js",
     "k6:execution": "k6 run --summary-export out/k6-summary.json k6/execution.js",
     "k6:subscribers": "k6 run --summary-export out/k6-summary.json k6/subscribers.js",
-    "k6:proposals": "k6 run --summary-export out/k6-summary.json k6/proposals.js"
+    "k6:proposals": "k6 run --summary-export out/k6-summary.json k6/proposals.js",
+    "k6:surge": "k6 run --summary-export out/k6-summary.json k6/surge.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

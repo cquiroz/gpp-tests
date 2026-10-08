@@ -21,10 +21,10 @@ Three suites, two claims:
   guest and as a fabricated PI, plus one executed step as Observe's service identity and one
   Observe-browser websocket session.
 - **k6 load suites** make the performance claims. The **trend run** (200 guest VUs) says
-  "tonight is slower than last night". The **surge run** (on demand; its populations exist, the
-  composed profile is ticket 018) says "under
-  end-of-CfP load, with both telescopes executing through Observe, the odb keeps execution
-  within its stall budget, proposal submission usable and regular operations within spec".
+  "tonight is slower than last night". The **surge run** (`k6/surge.js`, on demand, two tiers)
+  says "under end-of-CfP load, with both telescopes executing through Observe, the odb keeps
+  execution within its stall budget, proposal submission usable and regular operations within
+  spec".
 
 The regression suites run against a throwaway stack booted inside CI. The load suites run
 against a dedicated target on AWS, with k6 on a second instance beside it.
@@ -36,10 +36,10 @@ against a dedicated target on AWS, with k6 on a second instance beside it.
 | Shared library | `lib/` | Every GraphQL document and payload (`odb-operations.js`, validated offline against the vendored odb schema), endpoints, the metric-label budget, the scenario parity catalog, run identity, threshold calibration | Imported by every suite; pure JavaScript, no dependencies |
 | Browser suite | `tests/` | Playwright journeys against Explore; selectors only through Explore's `data-testid` contract | GitHub runner, nightly |
 | k6 regression | `k6/regression.js` | The same scenarios at the GraphQL layer, 14 observing modes, one Observe step, one websocket session | GitHub runner, nightly, after the browser suite |
-| k6 load | `k6/load.js`, `k6/execution.js`, `k6/subscribers.js`, `k6/proposals.js` | The 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; PIs submitting proposals at a literal rate; the composed surge profile to come (018) | AWS generator instance, on demand |
+| k6 load | `k6/surge.js`; `k6/load.js`, `k6/execution.js`, `k6/subscribers.js`, `k6/proposals.js` | The surge run: every layer at once, in a realistic or a ceiling tier, over a 10/60/5-minute shape (018). Each layer also on its own: the 200-VU trend profile; Observe execution instances; the websocket subscriber population with churn; PIs submitting proposals at a literal rate. One VU body per layer in `k6/lib/*-vu.js`, shared by the standalone script and the surge | AWS generator instance, on demand |
 | Ephemeral stack | `stack/` | Compose file, Caddy, bootstrap scripts: boots the eight services from empty (the eighth is the object store for attachments; Caddy also stands in for Mailgun), mints keys and the service JWT, fabricates standard users | Inside the GitHub runner; locally; on the AWS target |
-| Tools and CI | `tools/`, `.github/` | Replay operations at boot, compute thresholds from the ledger, write run summaries, post Grafana annotations; `regression.yml`, `performance.yml` | GitHub Actions |
-| AWS runner | `loadtest/aws-run.sh`, `loadtest/aws-first-run.sh` | The standard unattended run (regression, execution, subscribers, stop) and the wizard behind it, interactive when wanted, under NOIRLab's launch procedure | Operator's laptop, over SSM |
+| Tools and CI | `tools/`, `.github/` | Replay operations at boot, compute thresholds from the ledger, write run summaries, post Grafana annotations, render the surge verdict; `regression.yml`, `performance.yml`, `surge.yml` (on demand: boots the AWS pair under an OIDC role, runs the surge, publishes the verdict, tears down — armed once IT grants the role, 016) | GitHub Actions |
+| AWS runner | `loadtest/aws-run.sh`, `loadtest/aws-first-run.sh`, `loadtest/aws-teardown.sh` | The standard unattended run (regression, execution, subscribers, stop; `--surge [tier]` for the composed profile) and the wizard behind it, interactive when wanted, under NOIRLab's launch procedure; the teardown backstop the workflow runs under `always()` | Operator's laptop or the workflow, over SSM |
 
 ## Where it runs: the regression path
 
@@ -256,7 +256,13 @@ flowchart LR
   summary["k6 summary JSON<br/>→ tools/write-run-summary.js"]
   ledger["run-data branch<br/>per-run summaries, threshold ledger"]
   thr["tools/compute-thresholds.js<br/>last nights → tonight's thresholds"]
+  slos["k6/surge-slos.json<br/>absolute SLOs per surge class"]
+  verdict["tools/surge-verdict.js<br/>one table per class → job summary"]
 
+  slos --> k6
+  slos --> verdict
+  summary --> verdict
+  verdict --> ann
   k6 --> checks
   k6 -- "remote write, 4 labels max" --> prom
   k6 -- "traces" --> tempo
@@ -271,8 +277,13 @@ flowchart LR
 - **Trend thresholds come from the ledger.** The nightly load run reads its own history from
   the `run-data` branch and fails when tonight is slower than the recent nights. The first
   nights run threshold-free.
-- **Surge SLOs are absolute**, per traffic class, in one file (ticket 023). The execution
-  class's provisional budget is step ODB overhead p95 < 2 s and p99 < 5 s.
+- **Surge SLOs are absolute**, per traffic class, in one file: `k6/surge-slos.json` (ticket
+  023) holds five classes — execution, proposals, regular, subscriptions, errors — as k6
+  expressions by metric and tag. The surge scripts arm it verbatim, so k6's exit code is the
+  verdict; `tools/surge-verdict.js` reads the same file against the summary export and
+  renders the **surge verdict**, one table per class, into the GitHub job summary (or a
+  Markdown file beside the JSON on an AWS run), with a Grafana annotation on breach. Every
+  figure is marked provisional in the file, with who still has to agree it.
 - **A functional floor is always armed.** The odb answers a rejected operation with HTTP 200
   and an `errors` array, so every suite thresholds on k6 checks, not on `http_req_failed`.
 
@@ -287,10 +298,11 @@ flowchart LR
 | The execution model and its first numbers | [ticket 021](wayfinder/tickets/021-observe-execution-vus-and-seed.md) |
 | The websocket client, the subscriber shapes and their first numbers | [ticket 022](wayfinder/tickets/022-graphql-ws-client-and-subscriber-vus.md) |
 | The object store, the attachment uploads, the Mailgun stand-in | [ticket 028](wayfinder/tickets/028-object-store-and-attachment-uploads.md) |
+| The surge SLO file, how a class is added, the verdict | [ticket 023](wayfinder/tickets/023-surge-slos-and-verdict.md), [`k6/surge-slos.json`](k6/surge-slos.json) |
 | Why the odb's memory grows to its limit, and the heap cap | [`research/odb-memory-growth-handoff.md`](research/odb-memory-growth-handoff.md) |
 | Domain vocabulary | [`CONTEXT.md`](CONTEXT.md) |
 
-Next on the frontier: the surge SLO file and verdict (023), then the surge profile that
-composes execution (021), subscribers (022) and the proposal loop (017) over the regular mix
-(018), with one full run per tier on AWS. In parallel, IT's answer on a CI identity for AWS
-(016).
+Next on the frontier: the two full-length surge runs on AWS, one per tier, that close 018
+(`loadtest/aws-run.sh --surge realistic`, then `--surge ceiling`; the profile itself is built
+and proven locally). In parallel, IT's answer on a CI identity for AWS (016): the `surge`
+workflow is written and arms itself when the `AWS_LOADTEST_ROLE_ARN` variable exists.

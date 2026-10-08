@@ -9,17 +9,14 @@
 // population holds sessions of SESSION_SECONDS and reconnects; the churn executor ramps users
 // in and out with one- to three-minute sessions, half of which drop the socket instead of
 // closing it. Each session edits on a cadence and measures the round trip on its own
-// subscription. Design target on AWS: 50–100 steady (ticket 020).
+// subscription. Design target on AWS: 50–100 steady (ticket 020). The surge run
+// (`k6/surge.js`, ticket 018) runs the same two bodies (`k6/lib/subscriber-vu.js`) as
+// separate scenarios sized by tier.
 import exec from "k6/execution";
 import tempo from "./vendor/http-instrumentation-tempo.js";
 import { INSECURE_TLS, TEMPO_ENABLED, TESTID, endpoints } from "./lib/config.js";
-import { scenarioAsync } from "./lib/scenarios.js";
-import {
-  exploreTabFixture,
-  exploreTabSession,
-  observeBrowserFixture,
-  observeBrowserSession,
-} from "./lib/subscribers.js";
+import { sloThresholds, sloTrendStats } from "./lib/slos.js";
+import { SUBSCRIPTION_BREAKDOWN, exploreTabVu, observeBrowserVu } from "./lib/subscriber-vu.js";
 
 if (TEMPO_ENABLED) {
   tempo.instrumentHTTP({ propagator: "w3c" });
@@ -33,6 +30,9 @@ const EDIT_CADENCE_SECONDS = Number(__ENV.EDIT_CADENCE_SECONDS || 30);
 
 export const options = {
   insecureSkipTLSVerify: INSECURE_TLS,
+  // The summary export carries only these trend stats, so every aggregation the SLO file
+  // thresholds on has to be named here for the verdict to read it (ticket 023).
+  summaryTrendStats: sloTrendStats(["errors", "subscriptions"]),
   scenarios: {
     steady: {
       executor: "constant-vus",
@@ -55,23 +55,13 @@ export const options = {
     },
   },
   thresholds: {
-    checks: [`rate>${__ENV.MIN_CHECK_RATE || 0.99}`],
-    // Provisional: the subscription round trip has no SLO yet (ticket 023 picks one from these
-    // numbers). Named so the summary shows them.
-    "odb_ws_round_trip{operation:ProgramObservationsDelta}": ["p(95)>=0"],
-    "odb_ws_round_trip{operation:ObservationEdits}": ["p(95)>=0"],
-    "odb_ws_event_latency{operation:ProgramObservationsDelta}": ["p(95)>=0"],
-    "odb_ws_event_latency{operation:ObservationEdits}": ["p(95)>=0"],
-    "odb_ws_ping{scenario:explore-tab}": ["p(95)>=0"],
-    "odb_ws_ping{scenario:observe-browser}": ["p(95)>=0"],
-    odb_ws_lost_events: ["count>=0"],
-    odb_ws_unanswered_pings: ["count>=0"],
-    odb_ws_reconnects: ["count>=0"],
+    // The subscription class's SLOs and the error floor, verbatim from k6/surge-slos.json
+    // (ticket 023): event latency and round trip over both subscriptions, nothing lost.
+    ...sloThresholds(["errors", "subscriptions"]),
+    // Informational: the per-subscription and per-shape breakdown, so the summary shows it.
+    ...SUBSCRIPTION_BREAKDOWN,
   },
 };
-
-/** Per-VU fixture; module scope persists across a VU's iterations. */
-let fixture = null;
 
 export function setup() {
   console.log(
@@ -85,31 +75,24 @@ function isObserveBrowser() {
   return exec.vu.idInTest % 4 === 0;
 }
 
-function ensureFixture() {
-  if (!fixture) fixture = isObserveBrowser() ? observeBrowserFixture() : exploreTabFixture();
-  return fixture;
-}
-
 export async function steady() {
-  const f = ensureFixture();
   const opts = { holdMs: SESSION_SECONDS * 1000, cadenceMs: EDIT_CADENCE_SECONDS * 1000, drop: false };
   if (isObserveBrowser()) {
-    await scenarioAsync("observe-browser", () => observeBrowserSession(f, opts));
+    await observeBrowserVu(opts);
   } else {
-    await scenarioAsync("explore-tab", () => exploreTabSession(f, opts));
+    await exploreTabVu(opts);
   }
 }
 
 export async function churn() {
-  const f = ensureFixture();
   const opts = {
     holdMs: (60 + Math.random() * 120) * 1000,
     cadenceMs: EDIT_CADENCE_SECONDS * 1000,
     drop: Math.random() < 0.5,
   };
   if (isObserveBrowser()) {
-    await scenarioAsync("observe-browser", () => observeBrowserSession(f, opts));
+    await observeBrowserVu(opts);
   } else {
-    await scenarioAsync("explore-tab", () => exploreTabSession(f, opts));
+    await exploreTabVu(opts);
   }
 }

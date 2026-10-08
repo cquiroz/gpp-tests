@@ -138,3 +138,50 @@ numbers. The automation half waits on IT: a GitHub OIDC role for the repository 
 `gpp-tests:loadtest` tag (preferred, no stored credential, destructive calls refused by the API
 on untagged resources), or a self-hosted runner inside `nl-vpc` with the same tag-conditioned
 instance profile. Ask carried by Carlos.
+
+**The workflow is written and waits only for the identity (2026-10-07).**
+`.github/workflows/surge.yml` is the on-demand run ticket 018 asked for: `workflow_dispatch`
+with the tier, the steady-state minutes and stop/terminate as inputs, one job that assumes the
+role in the `AWS_LOADTEST_ROLE_ARN` repository variable over OIDC
+(`aws-actions/configure-aws-credentials`), installs the Session Manager plugin, and runs
+`loadtest/aws-run.sh --surge <tier>` — the same unattended wizard a laptop runs. Until the
+variable exists the job exits green with a notice, as `performance.yml` does for its
+unprovisioned target. What the wizard needed to run there, all small:
+
+- `AWS_PROFILE=none` — no CLI profile; the role's credentials are in the environment. The
+  wizard un-exports the variable (the AWS CLI reads `AWS_PROFILE` itself) and `awsx` and the
+  ssh ProxyCommand pass no `--profile`.
+- `KEY_NAME=gpp-tests-ci-<run id>` — a key pair of the run's own, created by the wizard as any
+  new key pair is and deleted at the end; nothing stored in GitHub. A workflow run launches a
+  fresh pair (no saved `TARGET_ID`/`GEN_ID` on a runner) and terminates it, so the laptop's
+  stopped pair is untouched.
+- `GITHUB_RUN_ID` passes through to k6, so every summary carries the workflow's run identity
+  (`load-<run id>`), the same string the job's Grafana annotations carry.
+- The verdict reaches the job summary by construction: the wizard renders it with
+  `tools/surge-verdict.js`, which appends to `$GITHUB_STEP_SUMMARY` when set; the workflow
+  then runs the same tool once more as the gate (exit 1 on a breach, 2 with no summary).
+- `loadtest/aws-teardown.sh`, run under `always()`: stop or terminate from the saved state,
+  delete the run's attachment prefix and its key pair, idempotent, refusing any instance not
+  tagged `gpp-tests:loadtest=1` with a `gpp-tests-*` Name. The wizard tears down on its own
+  exit paths (AUTO traps the exit); this covers a killed runner or a cancel between two ssh
+  calls.
+- The standard-user pool is sized for the surge at bootstrap (`POOL_PI_COUNT` and
+  `POOL_STAFF_COUNT`, 500 each when the surge is on): a composed run hands VU ids out across
+  every scenario from one counter, and each pool must cover all of them.
+
+**The ask to IT, concretely.** An IAM role in 384445651298 that trusts
+`token.actions.githubusercontent.com` for `repo:cquiroz/gpp-tests:ref:refs/heads/main` (later
+`gemini-hlsw/gpp-tests`, ticket 011), with the permission set the `carlos.quiroz` user has
+under the procedure (run-instances through the `NOIRLab-Software-GPP` template with the image,
+type, key, disk, user-data and tag overrides; describe; start, stop and terminate conditioned
+on `aws:ResourceTag/gpp-tests:loadtest = 1`; `ssm:StartSession` with `AWS-StartSSHSession`;
+`ec2:CreateKeyPair`/`DeleteKeyPair` on `gpp-tests-ci-*`; object operations on
+`noirlab-gpp-tests`). The alternative remains a self-hosted runner inside `nl-vpc` with the
+same tag-conditioned instance profile, in which case the workflow's `runs-on` changes and the
+plugin step goes away. Then: set `AWS_LOADTEST_ROLE_ARN`, dispatch `surge` with the realistic
+tier, and record the run link here.
+
+**Boot command and cost (laptop path, the proven one):** `loadtest/aws-run.sh --surge
+[realistic|ceiling]` — about 110 minutes end to end (boot ~15, regression ~1, surge 75 plus
+the 4-minute graceful stop, collect, stop), about $2.50 for the pair at on-demand prices;
+`loadtest/aws-run.sh` without `--surge` stays the 55-minute standard run.

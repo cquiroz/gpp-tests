@@ -129,6 +129,16 @@ source stack/.env.generated
 SUBMISSIONS_PER_HOUR=250 DURATION=10m npm run k6:proposals     # realistic tier; 500 is the ceiling
 ```
 
+Each of those scripts takes its pass criteria from `k6/surge-slos.json` — the surge SLOs of
+[ticket 020](wayfinder/tickets/020-decide-stress-first-placement-and-surge-claim.md), one
+class per kind of traffic, as k6 expressions — so k6's exit code is the verdict. The same
+file read against the summary export renders the surge verdict, one table per class
+(`tools/surge-verdict.js`, [ticket 023](wayfinder/tickets/023-surge-slos-and-verdict.md)):
+
+```bash
+npm run verdict -- out/k6-summary.json --classes=errors,execution   # Markdown; exit 1 on a breach
+```
+
 The pool itself (`stack/.env.standard-users.json`, 250 PIs and 4 staff by default) is written
 by `stack/scripts/create-standard-users.sh` at bootstrap; `POOL_PI_COUNT` / `POOL_STAFF_COUNT`
 size it, and it has to be at least as large as a run's VU count because each VU is its own
@@ -167,6 +177,20 @@ identity.
   required attachments through the odb's REST route; the e2e lifecycle (upload, submit, minted
   reference, retract — by API and through Explore's buttons) is back, and the spec asserts the
   submission email reached the stand-in. No email can leave the stack.
+- **The surge run is composed ([ticket 018](wayfinder/tickets/018-implement-surge-profile.md), 2026-10-07).**
+  `k6/surge.js` runs every layer at once — the guest mix, PIs submitting at the tier's rate,
+  Explore tabs, Observe instances and Observe browsers — over a 10/60/5-minute shape in a
+  realistic or a ceiling tier, with every surge SLO armed. Each layer's VU body lives in
+  `k6/lib/*-vu.js`, shared with its standalone script. On the load target it is
+  `loadtest/aws-run.sh --surge [realistic|ceiling]`; the on-demand `surge` workflow is written
+  and exits with a notice until IT grants CI an AWS role ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)).
+  Proven locally on a short shape; the two full-length runs per tier are the next thing to do.
+- **The surge has its pass criteria and its verdict ([ticket 023](wayfinder/tickets/023-surge-slos-and-verdict.md), 2026-10-07).**
+  `k6/surge-slos.json` holds the absolute SLOs per class of surge traffic; the execution,
+  proposal and subscriber scripts arm them, and `tools/surge-verdict.js` renders a run's
+  summary as one table per class, into the job summary in CI and beside the JSON on an AWS
+  run. The 2026-10-07 AWS runs read PASS on every class they exercised; every figure is
+  provisional until the odb and Observe developers have argued with real numbers.
 - **Proposals at a rate ([ticket 017](wayfinder/tickets/017-standard-users-and-proposals-in-k6.md), 2026-10-06).**
   Bootstrap fabricates a pool of 250 PIs and 4 staff in the SSO database, one identity per
   load VU; `k6/proposals.js` has staff open a call and PIs submit against it on an

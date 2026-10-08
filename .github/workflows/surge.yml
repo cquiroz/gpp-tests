@@ -1,0 +1,183 @@
+# The on-demand surge run (tickets 016 and 018): boot the AWS load target, run the composed
+# surge profile from the generator in the chosen tier, publish the verdict, tear down.
+#
+# The body is loadtest/aws-run.sh --surge — the same unattended wizard a laptop runs — under
+# a GitHub OIDC role instead of a CLI profile. The role is IT's to grant (the account is
+# NOIRLab's shared one, launched only through the GPP launch template and reached only over
+# SSM); until the AWS_LOADTEST_ROLE_ARN repository variable names it, this workflow exits
+# green with a notice, the way performance.yml does for its unprovisioned target.
+#
+# Fires on demand only (ticket 020: on demand and before promoting the odb, never per merge).
+name: surge
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Surge tier (ticket 020)
+        type: choice
+        options: [realistic, ceiling]
+        default: realistic
+      steady-minutes:
+        description: Minutes of steady state (10 ramp and 5 drain are added; 60 is the claim)
+        type: string
+        default: "60"
+      teardown:
+        description: What happens to the pair at the end
+        type: choice
+        options: [terminate, stop]
+        default: terminate
+
+# One load target: never two runs against it at once, and never cancel one halfway — a
+# half-torn-down pair is what the safety stop is for.
+concurrency:
+  group: loadtest-aws
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # the OIDC token the AWS role trusts
+  contents: read
+
+jobs:
+  surge:
+    runs-on: ubuntu-latest
+    # Boot (~15 min from a fresh pair), regression, the 75-minute surge with its 4-minute
+    # graceful stop, collect, teardown — with room for a longer steady state.
+    timeout-minutes: 240
+    env:
+      AWS_REGION: us-west-2
+      # The wizard's "no profile": the role's credentials are in the environment.
+      AWS_PROFILE: none
+      # A key pair of this run's own, created by the wizard and deleted at the end; nothing
+      # stored, and a fresh pair is launched every time (TARGET_ID/GEN_ID are not saved here).
+      KEY_NAME: gpp-tests-ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check CI has an identity on AWS
+        id: preflight
+        env:
+          AWS_LOADTEST_ROLE_ARN: ${{ vars.AWS_LOADTEST_ROLE_ARN }}
+        run: |
+          if [[ -z "$AWS_LOADTEST_ROLE_ARN" ]]; then
+            echo "::notice::no AWS identity for CI yet (ticket 016): set the AWS_LOADTEST_ROLE_ARN repository variable to the OIDC role IT grants. Until then, run loadtest/aws-run.sh --surge from a laptop."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_LOADTEST_ROLE_ARN }}
+          aws-region: us-west-2
+          role-session-name: gpp-tests-surge-${{ github.run_id }}
+
+      # ssh, scp and rsync all tunnel through `ssm start-session`, which needs the plugin.
+      - name: Install the Session Manager plugin
+        if: steps.preflight.outputs.ready == 'true'
+        run: |
+          curl -fsSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/session-manager-plugin.deb
+          sudo dpkg -i /tmp/session-manager-plugin.deb
+          session-manager-plugin --version
+          rsync --version | head -1
+
+      - uses: actions/setup-node@v7
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.preflight.outputs.ready == 'true'
+
+      - name: Record the run start
+        if: steps.preflight.outputs.ready == 'true'
+        id: run
+        run: echo "started-at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" >> "$GITHUB_OUTPUT"
+
+      - name: Annotate the run start in Grafana
+        if: steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: node tools/grafana-annotate.js --kind=start --suite=load --at=${{ steps.run.outputs.started-at }}
+
+      # Boot the pair, bootstrap the stack, regression, the surge, collect (the verdict is
+      # rendered here and lands in the job summary, because the wizard calls
+      # tools/surge-verdict.js with GITHUB_STEP_SUMMARY set), tear down. Any failure stops
+      # the pair before the step ends; the always() step below is the backstop.
+      - name: Boot the load target and run the surge
+        if: steps.preflight.outputs.ready == 'true'
+        id: surge
+        continue-on-error: true
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          K6_PROMETHEUS_RW_SERVER_URL: ${{ secrets.GC_PROM_RW_URL }}
+          K6_PROMETHEUS_RW_USERNAME: ${{ secrets.GC_PROM_INSTANCE_ID }}
+          K6_PROMETHEUS_RW_PASSWORD: ${{ secrets.GC_PROM_TOKEN }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: |
+          loadtest/aws-run.sh --surge "${{ inputs.tier }}" --steady "${{ inputs.steady-minutes }}" --${{ inputs.teardown }}
+
+      # The gate: the same file and the same expressions k6 armed, read off the collected
+      # summary. Exit 1 on a breach, 2 when there is no surge summary to read at all.
+      - name: Surge verdict
+        if: steps.preflight.outputs.ready == 'true'
+        id: verdict
+        continue-on-error: true
+        run: |
+          summary="$(ls -t out/k6-aws-surge-*.json 2>/dev/null | head -1 || true)"
+          if [[ -z "$summary" ]]; then
+            echo "::error::no surge summary was collected (see the wizard's log in the artifact)"
+            exit 2
+          fi
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+          node tools/surge-verdict.js "$summary" --out=out/surge-verdict.md
+          # The wizard already appended its own rendering; keep the gate's as the last word.
+
+      - name: Annotate breaches and the run end in Grafana
+        if: always() && steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_ANNOTATIONS_TOKEN: ${{ secrets.GRAFANA_ANNOTATIONS_TOKEN }}
+        run: |
+          summary="${{ steps.verdict.outputs.summary }}"
+          if [[ -n "$summary" ]]; then
+            breaches="$(node tools/surge-verdict.js --breaches "$summary")"
+            if [[ -n "$breaches" ]]; then
+              node tools/grafana-annotate.js --kind=breach --suite=load \
+                --at=${{ steps.run.outputs.started-at }} --breach="$breaches"
+            fi
+          fi
+          outcome=pass
+          [[ "${{ steps.surge.outcome }}" == "failure" || "${{ steps.verdict.outcome }}" == "failure" ]] && outcome=fail
+          node tools/grafana-annotate.js --kind=end --suite=load \
+            --at=${{ steps.run.outputs.started-at }} --outcome="$outcome"
+
+      # Summaries, verdicts, the k6 logs, the odb memory samples and the wizard's own log.
+      - name: Upload the run's files
+        if: always() && steps.preflight.outputs.ready == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: surge-${{ inputs.tier }}-${{ github.run_id }}
+          path: |
+            out/*.json
+            out/*.md
+            out/*.log
+          retention-days: 90
+
+      # Belt and braces: the wizard tears down on its own exit paths, but a runner that died
+      # or a job cancelled mid-ssh would not reach them. Idempotent, and refuses anything not
+      # tagged gpp-tests:loadtest=1 with a gpp-tests-* Name.
+      - name: Tear down whatever is still running
+        if: always() && steps.preflight.outputs.ready == 'true'
+        run: loadtest/aws-teardown.sh --${{ inputs.teardown }} --delete-key-pair
+
+      - name: Fail on a breach
+        if: steps.surge.outcome == 'failure' || steps.verdict.outcome == 'failure'
+        run: |
+          echo "::error::surge run (${{ inputs.tier }}) failed — wizard: ${{ steps.surge.outcome }}, verdict: ${{ steps.verdict.outcome }}; see the job summary"
+          exit 1

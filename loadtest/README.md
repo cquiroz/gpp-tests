@@ -5,14 +5,28 @@
 >
 > - `aws-run.sh` — the standard unattended run: boot the pair, regression suite, 20 minutes of
 >   Observe execution, 10 minutes of websocket subscribers, collect, stop (`--help` for the
->   options; `--load` adds the 40-minute 200-VU trend profile).
+>   options; `--load` adds the 40-minute 200-VU trend profile). `aws-run.sh --surge [realistic|ceiling]`
+>   runs the regression suite and then the 75-minute composed surge (`k6/surge.js`, ticket
+>   018) in place of the standalone execution and subscribers stages; `--steady N` shortens
+>   the steady state. About 110 minutes, about $2.50.
 > - `aws-first-run.sh` — the wizard behind it; interactive without `AUTO=1`.
+> - `aws-teardown.sh` — stop or terminate the pair from the saved state, idempotent, and
+>   refusing anything not tagged `gpp-tests:loadtest=1`; the backstop the `surge` workflow
+>   runs under `always()`.
+> - `.github/workflows/surge.yml` — the same `aws-run.sh --surge`, dispatched by hand with the
+>   tier, under a GitHub OIDC role (`AWS_PROFILE=none`, a per-run key pair, a fresh pair
+>   terminated at the end). It needs the `AWS_LOADTEST_ROLE_ARN` repository variable, which is
+>   IT's role to grant (ticket 016); until then it exits green with a notice.
 > - `guard.sh` — the name-based safety rail the Heroku scripts share.
 > - Proposal attachments written during a run go to the `noirlab-gpp-tests` bucket under
 >   `gpp-tests/aws-<timestamp>/`, through the stack's re-signing proxy and the target's
 >   instance role (ticket 028). The wizard prints the totals and deletes the prefix at
 >   teardown (`KEEP_ATTACHMENTS=1` keeps it); a profile that cannot see the bucket boots
 >   the stack's own object store instead.
+> - Each summary the wizard collects is read against `k6/surge-slos.json` and the surge
+>   verdict saved beside it (`out/k6-aws-<run>-<stamp>-verdict.md`, ticket 023); a breach is
+>   annotated in Grafana when `GRAFANA_URL` and `GRAFANA_ANNOTATIONS_TOKEN` are in the
+>   environment.
 >
 > How it works and what IT allows: [ticket 016](../wayfinder/tickets/016-automate-aws-load-target.md),
 > [`ARCHITECTURE.md`](../ARCHITECTURE.md) "Where it runs: the AWS load target",

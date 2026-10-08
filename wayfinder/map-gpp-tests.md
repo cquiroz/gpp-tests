@@ -134,26 +134,37 @@ Settled during charting (constraints for every ticket):
   hardcoded Mailgun URL, so Caddy now answers as `api.mailgun.net`, records the mail and
   delivers nothing. Two upstream asks for Carlos: a configurable S3 region/endpoint, and a
   configurable Mailgun base URL.
+- [Surge SLO file and the surge verdict](tickets/023-surge-slos-and-verdict.md) —
+  built 2026-10-07. `k6/surge-slos.json` holds ticket 020's absolute criteria for five classes
+  (execution, proposals, regular, subscriptions, errors) as k6 expressions by metric and tag;
+  the surge scripts arm it verbatim, so the k6 exit code is the verdict, and
+  `tools/surge-verdict.js` renders the same file against the summary export as one table per
+  class — the job summary in CI, a Markdown file beside each JSON the AWS wizard collects,
+  a Grafana annotation on breach. The subscription SLO is now picked (event latency p95 <
+  500 ms, round trip p95 < 250 ms, nothing lost). Every figure is marked provisional in the
+  file itself, with who still has to agree it.
 
 ## Frontier now
 
 Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automation — the
-manual path is green under NOIRLab's us-west-2 procedure; automating it waits on IT: a GitHub
-OIDC role, or a runner inside `nl-vpc`), **023** (surge SLOs + verdict), **024** (telemetry
-stack, HITL), **027** (read production sizing, HITL). Order of build: 023 → 018, developed
-locally, each layer proven on AWS before composing; 016 in parallel. 021 and 022 closed
-2026-10-03, 028 closed 2026-10-05, 017 closed 2026-10-06 (every surge layer now exists on
-its own; 018 is blocked only on 016 and 023).
+manual path is green under NOIRLab's us-west-2 procedure and the `surge` workflow is written
+(2026-10-07); what remains is IT granting the OIDC role the workflow assumes, or a runner
+inside `nl-vpc`), **018** (the surge profile is built and proven locally (2026-10-07,
+`k6/surge.js`, `loadtest/aws-run.sh --surge`); what closes it is one full run per tier on
+AWS, started from a laptop, and their verdicts recorded), **024** (telemetry stack, HITL),
+**027** (read production sizing, HITL). 021 and 022 closed 2026-10-03, 028 closed 2026-10-05,
+017 closed 2026-10-06, 023 closed 2026-10-07.
 
 Off that order and already claimed: **029** (the `data-testid` contract ask to
 lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
 
 ## Not yet specified
 
-- **Subscription round-trip SLO** — provisional from 022's first native run (2026-10-04: 60
-  subscribers, event latency p95 78 ms, round trip p95 11 ms, ping p95 2 ms, nothing lost):
-  event latency from the mutation's send p95 < 500 ms, round trip from its acknowledgement
-  p95 < 250 ms, zero unanswered pings, zero lost events. 023 owns the file.
+- **The surge SLO figures themselves** — every class in `k6/surge-slos.json` is marked
+  provisional with who has to agree it: the execution stall budget (Observe developers), the
+  submit latency (this project's choice), the subscription figures (picked from 022's first
+  native run: event latency p95 < 500 ms, round trip p95 < 250 ms, nothing lost). The first
+  surge run per tier (018) is where they get argued with real numbers.
 - **Attachment sizes in the surge model** — 017 pads the fixture to 2 MiB (science) and
   512 KiB (team) per submission, an assumption, not a measurement
   (`PROPOSAL_ATTACHMENT_SIZES` in `lib/attachments.js`, overridable per run). Confirm against

@@ -61,7 +61,9 @@
   Proposals while the telescopes observe: proposal submission at deadline rate, Explore
   subscribers, Observe execution, and the regular-operations mix, all at once. Its claim is
   that observation execution stays within its stall budget, proposal submission stays
-  usable, and regular operations stay within spec. Runs in two tiers.
+  usable, and regular operations stay within spec. Runs in two tiers, over a 10-minute
+  ramp, 60 minutes steady and a 5-minute drain (`k6/surge.js`; `loadtest/aws-run.sh
+  --surge` on the load target; the `surge` workflow once CI has an AWS identity).
 - **Realistic tier** — the surge tier sized from evidence: the submission rate and
   concurrency a real deadline is expected to produce, and the real number of telescopes.
 - **Ceiling tier** — the surge tier sized from the stated stress ceiling (500 proposals in
@@ -75,11 +77,13 @@
   is the same event measured from the mutation's send. Same-VU by construction; cross-VU
   fan-out is a separate, later measurement.
 - **Surge SLO** — an absolute pass criterion for one class of surge traffic (execution,
-  proposals, regular operations, subscriptions). Absolute because the surge claim is
-  absolute; the trend run's baseline-relative thresholds are a different thing.
+  proposals, regular operations, subscriptions, errors), kept in `k6/surge-slos.json` as a
+  k6 expression on a metric. Absolute because the surge claim is absolute; the trend run's
+  baseline-relative thresholds are a different thing.
   _Avoid_: threshold (reserved for the trend run's ledger-derived limits).
-- **Surge verdict** — the surge run's pass/fail, one line per surge SLO, published with
-  the run.
+- **Surge verdict** — the surge run's pass/fail, one table per class with one line per
+  surge SLO, rendered by `tools/surge-verdict.js` from the k6 summary and published with the
+  run (the job summary in CI; a Markdown file beside the JSON on an AWS run).
 - **gpp-tests** — this project: the three suites, their shared operations library, the
   wayfinding and the research, in one repository with the load suite as the front door.
   Today it lives at `cquiroz/gpp-tests` (the prototype).

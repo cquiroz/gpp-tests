@@ -49,6 +49,56 @@ Not bisected from here: the target boots whatever `-dev` publishes. If the team 
 the stack at a build before and after #3154 (`ODB_IMAGE=…@sha256:…` to bootstrap), two
 20-minute execution runs settle it; `loadtest/aws-run.sh --no-subscribers` is the command.
 
+## Addendum 2026-10-08 — Postgres is where the time goes
+
+The container samples the wizard takes every 30 s on the target (`out/odb-stats-aws-*.log`)
+were not in the table above. They say the build change moved Postgres from idle to saturated
+under the identical profile (2 instances, 5–10 s per step, 20 minutes, nothing else running):
+
+| odb build | postgres CPU median / p90 / max | obscalc max | odb max |
+|---|---|---|---|
+| 2026-10-06 00:00 UTC (fast, `sha256:59686ce8…`) | 3.7 % / 32 % / 215 % | 28 % | 81 % |
+| 2026-10-07 15:36 UTC (slow, `sha256:5a91ea53…`) | 1265 % / 1378 % / 1407 % | 324 % | 98 % |
+| 2026-10-07 20:31 UTC (slow, `sha256:ea502a62…`) | 1290 % / 1379 % / 1404 % | 346 % | 107 % |
+
+Twelve to fourteen of the box's sixteen vCPUs, continuously, driven by two Observe
+instances. The first composed surge run (2026-10-08, odb `sha256:0eccc0455bc0…`, obscalc
+`sha256:7c1eb178a779…`; 2 instances at the real 60–120 s cadence plus 200 guests, 100 Explore
+tabs and 250 submissions/h) held Postgres at 1150–1295 % for its whole 75 minutes, with
+RecordVisit p95 1.8 s, ExecutionConfig read p95 1.1 s, and obscalc at ~100 % while every new
+proposal's observation took the full 180 s timeout to become defined.
+
+So the 2× is not a per-request tracing cost alone: the 10-07 odb, or the obscalc that moved
+with it, issues far more or far heavier queries. The obscalc figure points at #3145's
+"infrared digests invalidated by migration": an obscalc that re-derives digests continuously
+would look exactly like this, and so would a per-visit telluric query over a growing table.
+`pg_stat_statements` is not enabled in the stack; the wizard now saves `pg_stat_activity` and
+`pg_stat_user_tables` (sequential scans and tuples read per table) at the end of a surge
+(`out/pg-activity-surge-aws-<stamp>.txt`), which should name the table.
+
+The bisect is now one command per build: the wizard passes `ODB_IMAGE` and `OBSCALC_IMAGE`
+through to bootstrap, so
+
+```
+ODB_IMAGE=registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:59686ce805fd60166d6144aef1bf141bdd702cd48e868db14d0c1990a18b4c7d \
+OBSCALC_IMAGE=registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:f0af96e66328f7484748ef4879382d3398417831618cc0a455b40a7ddfc1e655 \
+  loadtest/aws-run.sh --no-subscribers
+```
+
+reproduces the fast run on today's target, and the same with a slow build's pair the slow one.
+**Pin both, from the same build.** The odb and obscalc share the database and its migrations;
+the 10-06 odb with the day's obscalc (2026-10-08) booted green and then answered HTTP 500 to
+`observationCalculated`, `updateObservation` and `recordVisit` — the newer obscalc had
+migrated the schema past it. The two digests of each build are in the wizard logs
+(`out/aws-run-<stamp>.log`, "odb:" and "obscalc:" lines) and, since 10-08, in
+`out/images-aws-<stamp>.json`. The pairs:
+
+| Build | odb | obscalc |
+|---|---|---|
+| fast, 2026-10-06 00:00 | `sha256:59686ce805fd60166d6144aef1bf141bdd702cd48e868db14d0c1990a18b4c7d` | `sha256:f0af96e66328f7484748ef4879382d3398417831618cc0a455b40a7ddfc1e655` |
+| slow, 2026-10-07 15:36 | `sha256:5a91ea539a00677c2e83ffde85827a301961a43b30a95acbd72a6cd5c70392ce` | `sha256:a9bbe13faafeebf4484fbdc1cbac4e23187b706908ce39e76111bf5946839d1e` |
+| slow, 2026-10-07 20:31 | `sha256:ea502a62485168b1b37722c6cce7e9d561ae53e0c7f96d7cd12187c694aa4408` | `sha256:3a2860d0cc2e905d21df3320a9c08a551e163c4365a4be726deda76dcfdedce0` |
+
 ## How to see it yourself
 
 - The raw summaries: `out/k6-aws-execution-20261006T003932Z.json` (fast),
