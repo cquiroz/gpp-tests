@@ -9,7 +9,17 @@
 >   runs the regression suite and then the 75-minute composed surge (`k6/surge.js`, ticket
 >   018) in place of the standalone execution and subscribers stages; `--steady N` shortens
 >   the steady state. About 110 minutes, about $2.50.
-> - `aws-first-run.sh` — the wizard behind it; interactive without `AUTO=1`.
+> - `aws-first-run.sh` — the wizard behind it; interactive without `AUTO=1`. `ODB_IMAGE` and
+>   `OBSCALC_IMAGE` (set together, from one build; `ITC_IMAGE`/`SSO_IMAGE` likewise) pin the
+>   stack to a given odb build. A capacity refusal on restarting the pair is retried for
+>   `START_RETRY_MINUTES` (10); `NEW_PAIR=1 TARGET_TYPE=… GEN_TYPE=…` runs on a fresh pair of
+>   other types, terminated at the end, leaving the saved pair as it is. The reused pair's
+>   database persists across runs (bootstrap only migrates forward); `WIPE_DATA=1` starts
+>   from empty, and a pinned older build needs that.
+> - `bisect-odb.sh <PR|sha>` — one bisect step for an odb regression: both images pinned to
+>   that main merge (lucuma-odb's CI tags every build by commit sha), five minutes of the
+>   execution profile, then `SLOW` or `FAST` from the Postgres CPU median. About 25 minutes,
+>   $0.60. The plan for the 2026-10-07 step is in `research/execution-overhead-2026-10-07.md`.
 > - `aws-teardown.sh` — stop or terminate the pair from the saved state, idempotent, and
 >   refusing anything not tagged `gpp-tests:loadtest=1`; the backstop the `surge` workflow
 >   runs under `always()`.

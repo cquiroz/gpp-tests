@@ -359,9 +359,17 @@ if [[ -n "${AUTO:-}" ]]; then
     local rc=$?
     [[ $rc -ne 0 ]] || return 0
     if [[ -n "${TARGET_ID:-}" && -n "${GEN_ID:-}" && "${TEARDOWN:-stop}" != "leave" ]]; then
-      warn "AUTO: exiting with status $rc — stopping $TARGET_ID and $GEN_ID"
-      if owned_or_die "$TARGET_ID" "$GEN_ID"; then
-        awsx ec2 stop-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null && say "both stopping"
+      if [[ -n "${NEW_PAIR:-}" ]]; then
+        # A fresh pair's ids are not saved anywhere: stopped, it would bill its disks unseen.
+        warn "AUTO: exiting with status $rc — terminating the fresh pair $TARGET_ID and $GEN_ID"
+        if owned_or_die "$TARGET_ID" "$GEN_ID"; then
+          awsx ec2 terminate-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null && say "both terminating"
+        fi
+      else
+        warn "AUTO: exiting with status $rc — stopping $TARGET_ID and $GEN_ID"
+        if owned_or_die "$TARGET_ID" "$GEN_ID"; then
+          awsx ec2 stop-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null && say "both stopping"
+        fi
       fi
     fi
     if [[ -n "${S3_BUCKET:-}" && -n "${S3_PREFIX:-}" && -z "${KEEP_ATTACHMENTS:-}" ]]; then
@@ -518,12 +526,23 @@ launch() {
     --query 'Instances[0].InstanceId' --output text
 }
 
-if [[ -z "$(_existing TARGET_ID || true)" ]]; then
+# NEW_PAIR=1 launches a fresh pair instead of restarting the saved one — for when the zone has
+# no capacity for the saved pair's types (InsufficientInstanceCapacity, 2026-10-09; a stopped
+# instance cannot change type, ModifyInstanceAttribute is denied) — with TARGET_TYPE/GEN_TYPE
+# naming the alternatives. The saved ids are left alone, so the next normal run still reuses
+# the usual pair, and the fresh pair is terminated at the end whatever TEARDOWN says.
+if [[ -n "${NEW_PAIR:-}" ]]; then
+  say "NEW_PAIR: launching a fresh pair ($TARGET_TYPE / $GEN_TYPE); the saved pair is left as it is"
+  TEARDOWN=terminate
+fi
+if [[ -z "$(_existing TARGET_ID || true)" || -n "${NEW_PAIR:-}" ]]; then
   # The template's root disk is ~7 GB; the stack's images and database need far more.
   TARGET_ID="$(launch gpp-tests-target "$TARGET_TYPE" 60)"
   GEN_ID="$(launch gpp-tests-generator "$GEN_TYPE" 30)"
-  write_env TARGET_ID "$TARGET_ID"
-  write_env GEN_ID "$GEN_ID"
+  if [[ -z "${NEW_PAIR:-}" ]]; then
+    write_env TARGET_ID "$TARGET_ID"
+    write_env GEN_ID "$GEN_ID"
+  fi
   say "launched target $TARGET_ID and generator $GEN_ID — waiting for them to run"
   awsx ec2 wait instance-running --instance-ids "$TARGET_ID" "$GEN_ID"
 else
@@ -542,8 +561,20 @@ else
     states="stopped stopped"
   fi
   if [[ "$states" == *stopped* ]]; then
-    awsx ec2 start-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null \
-      || { warn "AWS refused to start $TARGET_ID / $GEN_ID (states: $states)"; exit 1; }
+    # The zone can be out of capacity for the pair's types for a few minutes at a time
+    # (InsufficientInstanceCapacity, 2026-10-09): retry for up to START_RETRY_MINUTES before
+    # giving up. Any other refusal is final at once.
+    started=""
+    for attempt in $(seq 1 "${START_RETRY_MINUTES:-10}"); do
+      if out="$(awsx ec2 start-instances --instance-ids "$TARGET_ID" "$GEN_ID" 2>&1 >/dev/null)"; then
+        started=1; break
+      fi
+      [[ "$out" == *InsufficientInstanceCapacity* ]] || { warn "AWS refused to start $TARGET_ID / $GEN_ID: $out"; exit 1; }
+      note "no capacity for the pair's types right now (attempt $attempt/${START_RETRY_MINUTES:-10}); retrying in 60 s"
+      note "  (NEW_PAIR=1 TARGET_TYPE=m6i.4xlarge GEN_TYPE=c6i.2xlarge runs on a fresh pair of other types instead)"
+      sleep 60
+    done
+    [[ -n "$started" ]] || { warn "AWS had no capacity for $TARGET_ID / $GEN_ID for ${START_RETRY_MINUTES:-10} minutes"; exit 1; }
   elif [[ "$states" != "running running" ]]; then
     warn "unexpected instance states for $TARGET_ID / $GEN_ID: $states"
     exit 1
@@ -650,8 +681,10 @@ fi
 # (`registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:…`), so two runs can hit the same
 # build on different days, or a known-good build while a regression is bisected
 # (research/execution-overhead-2026-10-07.md). Unset, the stack pulls the day's -dev images.
-IMAGE_ENV="${ODB_IMAGE:+ODB_IMAGE=$ODB_IMAGE} ${OBSCALC_IMAGE:+OBSCALC_IMAGE=$OBSCALC_IMAGE}"
-[[ -z "${ODB_IMAGE:-}${OBSCALC_IMAGE:-}" ]] || say "pinned images: ${ODB_IMAGE:-} ${OBSCALC_IMAGE:-}"
+IMAGE_ENV="${ODB_IMAGE:+ODB_IMAGE=$ODB_IMAGE} ${OBSCALC_IMAGE:+OBSCALC_IMAGE=$OBSCALC_IMAGE} \
+${ITC_IMAGE:+ITC_IMAGE=$ITC_IMAGE} ${SSO_IMAGE:+SSO_IMAGE=$SSO_IMAGE}"
+[[ -z "${ODB_IMAGE:-}${OBSCALC_IMAGE:-}${ITC_IMAGE:-}${SSO_IMAGE:-}" ]] \
+  || say "pinned images: ${ODB_IMAGE:-} ${OBSCALC_IMAGE:-} ${ITC_IMAGE:-} ${SSO_IMAGE:-}"
 # The odb and obscalc are one codebase sharing one database and its migrations: pinning one
 # and pulling the other's `latest` boots a newer obscalc that migrates the schema past what the
 # older odb knows, and the odb then answers 500 to calculated results, subtitle edits and
@@ -660,6 +693,26 @@ IMAGE_ENV="${ODB_IMAGE:+ODB_IMAGE=$ODB_IMAGE} ${OBSCALC_IMAGE:+OBSCALC_IMAGE=$OB
 if [[ -n "${ODB_IMAGE:-}" && -z "${OBSCALC_IMAGE:-}" || -z "${ODB_IMAGE:-}" && -n "${OBSCALC_IMAGE:-}" ]]; then
   warn "ODB_IMAGE and OBSCALC_IMAGE must be pinned together (same build); only one is set"
   [[ -n "${ALLOW_MIXED_IMAGES:-}" ]] || exit 1
+fi
+# The ITC and SSO come from the same repository too: an older odb with the day's ITC and SSO
+# booted green and failed the smoke run with 500s (2026-10-09). loadtest/bisect-odb.sh pins
+# all four; by hand, pass ITC_IMAGE and SSO_IMAGE as well.
+if [[ -n "${ODB_IMAGE:-}" && -z "${ITC_IMAGE:-}${SSO_IMAGE:-}" ]]; then
+  warn "ODB_IMAGE is pinned but ITC_IMAGE/SSO_IMAGE are not: the day's ITC and SSO may not match this odb"
+fi
+
+# The target's database is NOT reset between runs: bootstrap migrates forward and never drops
+# a volume, and a stopped pair keeps its disks, so every run since 2026-10-02 has added its
+# programs, observations and visits to the same database (found 2026-10-09). That is what the
+# load numbers were measured against, and it is also why a pinned older build breaks: the
+# schema is already ahead of it. WIPE_DATA=1 runs stack/scripts/down.sh (volumes included)
+# first, so the run really starts from empty; the surge workflow always launches a fresh pair.
+if [[ -n "${WIPE_DATA:-}" ]]; then
+  say "WIPE_DATA: removing the previous runs' containers and volumes on the target"
+  ssh_to "$TARGET_ID" "bash -lc 'cd ~/gpp-tests && [ -f stack/scripts/down.sh ] && sg docker -c \"stack/scripts/down.sh\"'" \
+    || warn "could not run down.sh on the target (nothing to remove on a fresh pair)"
+else
+  note "the target's database carries every previous run's data (WIPE_DATA=1 to start from empty)"
 fi
 
 say "booting the stack"
@@ -785,10 +838,20 @@ ssh_to "$GEN_ID" "cd ~/gpp-tests && . out/grafana.env && $K6_ENV \
   VUS_LOW=5 VUS_HIGH=10 STAGE_1=30s STAGE_2=30s STAGE_3=30s STAGE_4=10s \
   MIN_CHECK_RATE=0.95 k6 run $GRAFANA_ARGS k6/load.js" || {
     warn "the smoke run failed — fix this before going further"
+    # The odb's side of it, while the stack is up (the 2026-10-09 bisect steps died here on a
+    # build whose subtitle edits answer 500, and nothing said why).
+    SMOKE_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+    ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
+      > "out/odb-log-smoke-aws-$SMOKE_STAMP.log" 2>/dev/null \
+      && say "the odb's log is in out/odb-log-smoke-aws-$SMOKE_STAMP.log" || true
     note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $GEN_ID"
     note "  aws --region $AWS_REGION ${AWS_PROFILE:+--profile $AWS_PROFILE} ssm start-session --target $TARGET_ID"
     note "    then: cd ~ubuntu/gpp-tests && sudo docker compose -f stack/docker-compose.yml logs odb"
-    exit 1
+    # A bisect step wants the execution stage's Postgres signal even from a build whose smoke
+    # is red for an unrelated reason (loadtest/bisect-odb.sh sets this); anything else stops.
+    confirm "Carry on past the failed smoke run?" CONTINUE_AFTER_SMOKE_FAILURE n \
+      || exit 1
+    warn "carrying on past a failed smoke run: this run's numbers are not a clean measurement"
   }
 say ""
 say "plumbing confirmed"
@@ -815,6 +878,21 @@ if ssh_to "$GEN_ID" "cd ~/gpp-tests && mkdir -p out && set -a && . stack/.env.st
   say "regression green on AWS"
 else
   warn "the regression suite failed — its log is collected in stage 12"
+  # The server side, before anything is torn down: the odb's log and what Postgres was doing
+  # (2026-10-09: a red regression on the accumulated database stopped the run with nothing
+  # to read).
+  REG_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+  ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
+    > "out/odb-log-regression-aws-$REG_STAMP.log" 2>/dev/null \
+    && say "the odb's log is in out/odb-log-regression-aws-$REG_STAMP.log" || true
+  ssh_to "$TARGET_ID" "sudo docker logs --tail 500 gpp-tests-obscalc-1 2>&1 | grep -v ' channel: Element('" \
+    > "out/obscalc-log-regression-aws-$REG_STAMP.log" 2>/dev/null || true
+  ssh_to "$TARGET_ID" "sudo docker exec gpp-tests-postgres-1 psql -U jimmy -d lucuma-odb -c \
+    'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15' -c \
+    'select state, wait_event_type, count(*) from pg_stat_activity group by 1,2 order by 3 desc' -c \
+    'select left(query, 200) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15'" \
+    > "out/pg-activity-regression-aws-$REG_STAMP.txt" 2>/dev/null \
+    && say "saved out/pg-activity-regression-aws-$REG_STAMP.txt" || true
   confirm "Carry on to the load profile anyway?" CONTINUE_AFTER_FAILURE n || { say "Stopping here — nothing torn down."; exit 1; }
 fi
 pause
@@ -1083,6 +1161,15 @@ if [[ -n "$RAN_EXEC" ]]; then
   scp_from "$GEN_ID" "gpp-tests/out/k6-execution.log" "out/k6-aws-execution-$STAMP.log" 2>/dev/null || true
   scp_from "$TARGET_ID" "gpp-tests/out/odb-stats.log" "out/odb-stats-aws-$STAMP.log" 2>/dev/null \
     && say "saved out/odb-stats-aws-$STAMP.log" || warn "no memory samples to collect"
+  # Postgres's own account of the run, for the bisect of the 2026-10-07 regression: which
+  # tables were scanned, and what was running when the profile ended (tables with the most
+  # sequential reads first). Taken while the stack is still up.
+  ssh_to "$TARGET_ID" "sudo docker exec gpp-tests-postgres-1 psql -U jimmy -d lucuma-odb -c \
+    'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15' -c \
+    'select state, wait_event_type, count(*) from pg_stat_activity group by 1,2 order by 3 desc' -c \
+    'select left(query, 200) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15'" \
+    > "out/pg-activity-execution-aws-$STAMP.txt" 2>/dev/null \
+    && say "saved out/pg-activity-execution-aws-$STAMP.txt" || warn "could not read pg_stat_activity"
   printf '\n'
 
   [[ -f "out/k6-aws-execution-$STAMP.json" ]] && node --input-type=commonjs -e '
@@ -1245,9 +1332,12 @@ case "$TEARDOWN" in
     if confirm "Terminate both instances? The stack and its data are gone for good." CONFIRM_TERMINATE y; then
       awsx ec2 terminate-instances --instance-ids "$TARGET_ID" "$GEN_ID" >/dev/null
       say "terminating. The key pair remains for next time."
-      # Nothing to reuse, so drop the ids rather than offer them on a re-run.
-      write_env TARGET_ID ""
-      write_env GEN_ID ""
+      # Nothing to reuse, so drop the ids rather than offer them on a re-run — unless this
+      # was a NEW_PAIR run, whose ids were never saved and whose saved pair is still stopped.
+      if [[ -z "${NEW_PAIR:-}" ]]; then
+        write_env TARGET_ID ""
+        write_env GEN_ID ""
+      fi
     else
       warn "left running — they are still billing"
     fi

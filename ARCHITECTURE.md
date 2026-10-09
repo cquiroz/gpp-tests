@@ -112,7 +112,11 @@ The load suites need hardware with headroom and a network without jitter, so bot
 and k6 run on EC2 in NOIRLab's shared AWS account, in `us-west-2`, under IT's launch
 procedure: launched only through the `NOIRLab-Software-GPP` launch template, in a private
 subnet with no public IP, reachable only over SSM. Today one command from a laptop runs it
-unattended (`loadtest/aws-run.sh`: boot, regression, execution, subscribers, collect, stop); a
+unattended (`loadtest/aws-run.sh`: boot, regression, execution, subscribers, collect, stop).
+One caveat on "from empty": the pair is stopped between runs, not terminated, and bootstrap
+migrates forward without dropping volumes, so the target's database carries every previous
+run's data unless `WIPE_DATA=1` runs `stack/scripts/down.sh` first (found 2026-10-09; the
+workflow launches a fresh pair, so it starts empty by construction). A
 workflow-driven run waits on IT granting CI an identity ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md))
 and will call the same script.
 
