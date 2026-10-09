@@ -198,7 +198,15 @@ and 19 of the 21 active queries were one statement: the smart-GCAL lookup
   target does. The accumulated database is not needed: the smart-GCAL table is reference
   data, the same 310k rows in a fresh database.
 
-**Two cheap confirmations**, both on the target:
+**Update, same evening: both bisect steps across #3145 read FAST from an empty database**
+(#3146: Postgres 4 %, 2,439 full scans in the run; #3145: 2 %, 2,667). The 2.5 million in the
+table above is cumulative since 2026-10-02. #3145 is not confirmed; the control run of #3152
+from empty decides between "needs the accumulated data" and "a later merge". **Control:
+#3152 from empty is FAST too (Postgres 4 %). The regression is build × data**: a likely
+post-upgrade obscalc backlog over existing observations, made expensive by the full scans. **Reproduced 2026-10-09 21:46 UTC**: #3137 → #3152 in place on 20k observations left 11,697 pending, Postgres 1308 %; see the follow-up, "Reproduced". Details in
+[`odb-ask-smart-gcal-full-scans.md`](odb-ask-smart-gcal-full-scans.md), "Bisect so far".
+
+**Two cheap confirmations** (as first planned; the first has now run), both on the target:
 
 1. Bisect across #3145 only: `loadtest/bisect-odb.sh 3146` (expected FAST) and
    `loadtest/bisect-odb.sh 3145` (expected SLOW), each from empty. Two runs, about $1.20.

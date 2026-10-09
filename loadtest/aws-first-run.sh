@@ -707,7 +707,7 @@ fi
 # load numbers were measured against, and it is also why a pinned older build breaks: the
 # schema is already ahead of it. WIPE_DATA=1 runs stack/scripts/down.sh (volumes included)
 # first, so the run really starts from empty; the surge workflow always launches a fresh pair.
-if [[ -n "${WIPE_DATA:-}" ]]; then
+if [[ "${WIPE_DATA:-}" =~ ^([Yy]|1|true|yes)$ ]]; then  # "0", "n" or unset keeps the data
   say "WIPE_DATA: removing the previous runs' containers and volumes on the target"
   ssh_to "$TARGET_ID" "bash -lc 'cd ~/gpp-tests && [ -f stack/scripts/down.sh ] && sg docker -c \"stack/scripts/down.sh\"'" \
     || warn "could not run down.sh on the target (nothing to remove on a fresh pair)"
@@ -1164,10 +1164,15 @@ if [[ -n "$RAN_EXEC" ]]; then
   # Postgres's own account of the run, for the bisect of the 2026-10-07 regression: which
   # tables were scanned, and what was running when the profile ended (tables with the most
   # sequential reads first). Taken while the stack is still up.
+  # Plus obscalc's backlog: how many observations are waiting for a recompute, by state, and
+  # how many carry a stale calibration estimate (V1339). The 2026-10-07 regression appears
+  # only on a database with many observations, so this is the number to watch.
   ssh_to "$TARGET_ID" "sudo docker exec gpp-tests-postgres-1 psql -U jimmy -d lucuma-odb -c \
     'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15' -c \
     'select state, wait_event_type, count(*) from pg_stat_activity group by 1,2 order by 3 desc' -c \
-    'select left(query, 200) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15'" \
+    'select left(query, 200) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15' -c \
+    'select c_obscalc_state, count(*) from t_obscalc group by 1 order by 2 desc' -c \
+    'select count(*) filter (where c_calibrations_stale) as calibrations_stale, count(*) as observations from t_obscalc'" \
     > "out/pg-activity-execution-aws-$STAMP.txt" 2>/dev/null \
     && say "saved out/pg-activity-execution-aws-$STAMP.txt" || warn "could not read pg_stat_activity"
   printf '\n'
