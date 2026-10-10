@@ -18,8 +18,16 @@
 >   from empty, and a pinned older build needs that.
 > - `bisect-odb.sh <PR|sha>` — one bisect step for an odb regression: both images pinned to
 >   that main merge (lucuma-odb's CI tags every build by commit sha), five minutes of the
->   execution profile, then `SLOW` or `FAST` from the Postgres CPU median. About 25 minutes,
->   $0.60. The plan for the 2026-10-07 step is in `research/execution-overhead-2026-10-07.md`.
+>   execution profile, then `SLOW` or `FAST` by `BISECT_SIGNAL` (default `cpu:postgres
+>   med>400`, the Postgres CPU median; any k6 summary metric works, e.g. `odb_step_overhead
+>   p(95)>1000`). About 25 minutes, $0.60. Exits 3 when the merge has no image.
+> - `node tools/bisect-odb.js --good=<PR|sha> --bad=<PR|sha>` — the whole search: the
+>   first-parent main merges between the two (GitHub compare API, no 100-run limit), the ends
+>   first unless `--trust-ends`, then halving with one `bisect-odb.sh` step each; unbuilt or
+>   signal-less merges are skipped. `--signal=…`, `--dry-run`, flags after `--` go to
+>   `aws-run.sh`. State and a table land in `out/bisect-odb-<stamp>.{json,md}` after every
+>   step; a step that collects no run stops the search with a `--resume=` command. The
+>   2026-10-07 hunt is in `research/execution-overhead-2026-10-07.md`.
 > - `aws-teardown.sh` — stop or terminate the pair from the saved state, idempotent, and
 >   refusing anything not tagged `gpp-tests:loadtest=1`; the backstop the `surge` workflow
 >   runs under `always()`.

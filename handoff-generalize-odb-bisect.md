@@ -20,13 +20,27 @@ performance regressions with little hand-holding.
 - The memory notes `gpp-testing-map-complete.md` and `aws-noirlab-load-target.md` hold the
   traps and the AWS procedure.
 
-## Uncommitted when this was written
+## Progress (2026-10-10)
 
-`loadtest/aws-first-run.sh` contains the `WIPE_DATA` fix: only `1`, `y`, `true` or `yes`
-wipe. Before the fix, any non-empty value, including `0`, wiped the database and voided a
-run. It also adds the obscalc backlog queries to the Postgres snapshot. The two research
-notes carry the "Reproduced" results. Carlos commits only when he says "commit", so ask
-before committing.
+Actions 2, 1 and 4 are built and unit-tested; no AWS run has used them yet.
+
+- `lib/bisect.js` (+ `lib/bisect.test.js`): the signal grammar `<source> <expression>`,
+  SLOW when it holds (`cpu:<container> med|avg|min|max|p(N)…` from the docker stats log, or
+  any k6 summary metric through `lib/verdict.js`'s `evaluate`, now exported); the
+  first-parent merge chain; `nextProbe` (ends first unless trusted, halving, `git bisect
+  skip` semantics for UNBUILT and NO-DATA, stops on a slow good end, a fast bad end or an
+  inconsistency); the Markdown table.
+- `tools/bisect-odb.js`: the resumable search driver (compare API, paginated, so no
+  100-run limit). `--judge [<stamp>]` is the one verdict reader; `bisect-odb.sh --read` and
+  its end-of-step verdict call it, and the step exits 3 when the merge has no image. The ITC
+  and SSO tag lookup now reads 1000 CI runs.
+- Checked: `npm run check` green; `--judge` re-reads the 10-09 runs as before (FAST 9 %,
+  SLOW 1308 %); `--dry-run` on 3137..3152 lists the same 11-merge window; a fake step script
+  in the scratchpad drove the loop to a planted culprit, through an unbuilt merge, a failed
+  step plus `--resume`, and a fast bad end.
+
+Open: action 3 (`--upgrade-from`) needs the snapshot-versus-reseed decision; action 5
+waits on IT.
 
 ## What exists now
 
@@ -38,7 +52,7 @@ One step is `loadtest/bisect-odb.sh <PR|sha> [aws-run.sh flags]`. It:
 - boots the AWS pair, wiping the database by default;
 - runs 5 minutes of `k6/execution.js`, carrying on past a red smoke or regression stage;
 - stops the pair and prints `SLOW` or `FAST` from the Postgres CPU median, threshold
-  `SLOW_PG_CPU=400`.
+  `SLOW_PG_CPU=400` (now `BISECT_SIGNAL`, see Progress).
 
 `--read` re-reads the newest collected run without booting anything. A step takes about
 25 minutes and costs about $0.60.
