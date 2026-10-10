@@ -4,7 +4,10 @@
 #
 #   loadtest/bisect-odb.sh 3146            # a lucuma-odb PR number (its merge commit on main)
 #   loadtest/bisect-odb.sh 1f9e5660993b…   # or a commit sha
-#   loadtest/bisect-odb.sh --read          # only re-read the newest run's verdict
+#   loadtest/bisect-odb.sh --read [stamp]  # only re-read the newest (or a given) run's verdict
+#   loadtest/bisect-odb.sh --check 3146    # only check the merge has images: exit 0, or 3
+#   loadtest/bisect-odb.sh --seed 3137     # wipe, then build ~20k observations on that merge
+#   WIPE_DATA=0 loadtest/bisect-odb.sh 3152   # …and boot a later merge on that data
 #
 # lucuma-odb's CI pushes every main build to Heroku's registry tagged with the commit sha
 # (web and obscalc alike), so a build needs no building: the step boots the stack on the pair
@@ -12,7 +15,15 @@
 # (default 5) of the standalone execution profile at the compressed cadence, stops the pair,
 # then judges the run by BISECT_SIGNAL (default `cpu:postgres med>400`; the 2026-10-07
 # regression's signature is ~1270 % median against 4 % before it; grammar in lib/bisect.js).
-# About 25 minutes and $0.60. tools/bisect-odb.js runs a whole search of these steps.
+# About 25 minutes and $0.60. tools/bisect-odb.js runs a whole search of these steps;
+# the guide is loadtest/BISECT.md.
+#
+# --seed is for regressions that need data (the 10-07 one did): an empty database, the
+# merge's images, the regression suite and the 40-minute 200-VU load profile, no execution
+# stage and no verdict; about 70 minutes and $1.50. A step with WIPE_DATA=0 afterwards boots
+# its merge on that database, so the upgrade's migrations and obscalc recompute are measured.
+# Only forward: the seed must be at or before the merge booted on it. NEW_PAIR=1 terminates
+# its pair at the end, losing the data, so it is refused with --seed and with WIPE_DATA=0.
 #
 # The sha must be a main-branch merge whose CI run succeeded (a cancelled run pushed no
 # image); the step exits 3 when the registry has no image for it, so the search can skip it.
@@ -25,8 +36,22 @@ REGISTRY="registry.heroku.com/lucuma-postgres-odb-dev"
 # `cpu:postgres med>400`, read against the run's docker stats log and k6 summary.
 read_verdict() { node tools/bisect-odb.js --judge "$@"; }
 
-if [[ "${1:-}" == "--read" ]]; then read_verdict; exit; fi
-[[ -n "${1:-}" ]] || { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+mode=step
+case "${1:-}" in
+  --read) shift; read_verdict "$@"; exit ;;
+  --check) mode=check; shift ;;
+  --seed) mode=seed; shift ;;
+  -h|--help|"") usage; exit 2 ;;
+esac
+[[ -n "${1:-}" ]] || { usage; exit 2; }
+
+wipe_requested() { [[ "${WIPE_DATA:-1}" =~ ^(1|y|true|yes)$ ]]; }
+if [[ "${NEW_PAIR:-}" =~ ^(1|y|true|yes)$ ]] && { [[ "$mode" == seed ]] || ! wipe_requested; }; then
+  echo "NEW_PAIR=1 terminates its pair at the end: a seed would be lost, and WIPE_DATA=0 would find no data" >&2
+  exit 2
+fi
 
 ref="$1"
 if [[ "$ref" =~ ^[0-9]+$ ]]; then
@@ -41,6 +66,7 @@ for image in web obscalc; do
   docker manifest inspect "$REGISTRY/$image:$sha" >/dev/null 2>&1 \
     || { echo "no image $REGISTRY/$image:$sha in the registry (CI cancelled for that merge?)" >&2; exit 3; }
 done
+[[ "$mode" == check ]] && { echo "images present for $sha"; exit 0; }
 
 # The ITC and SSO are built from the same repository, and the odb of one commit must run with
 # the ITC and SSO of that commit (an older odb with today's pair answered 500 to subtitle edits
@@ -76,9 +102,24 @@ echo "images: $REGISTRY/{web,obscalc}:$sha · itc-dev/web:${itc_sha:0:8} · lucu
 # the build on a small database, not on the one the regression was first seen on; see the
 # handoff note before reading a FAST as final. WIPE_DATA=0 keeps the data.
 started="$(mktemp)"; trap 'command rm -f "$started"' EXIT
-ODB_IMAGE="$REGISTRY/web:$sha" OBSCALC_IMAGE="$REGISTRY/obscalc:$sha" \
-ITC_IMAGE="registry.heroku.com/itc-dev/web:$itc_sha" SSO_IMAGE="registry.heroku.com/lucuma-sso-dev/web:$sso_sha" \
-CONTINUE_AFTER_SMOKE_FAILURE=1 CONTINUE_AFTER_FAILURE=1 WIPE_DATA="${WIPE_DATA:-1}" \
+pinned=(
+  ODB_IMAGE="$REGISTRY/web:$sha" OBSCALC_IMAGE="$REGISTRY/obscalc:$sha"
+  ITC_IMAGE="registry.heroku.com/itc-dev/web:$itc_sha" SSO_IMAGE="registry.heroku.com/lucuma-sso-dev/web:$sso_sha"
+  CONTINUE_AFTER_SMOKE_FAILURE=1 CONTINUE_AFTER_FAILURE=1
+)
+
+if [[ "$mode" == seed ]]; then
+  env "${pinned[@]}" WIPE_DATA=1 loadtest/aws-run.sh --no-subscribers --no-execution --load "${@:2}"
+  # The load summary is out/k6-aws-<stamp>.json (a digit after the dash, unlike the stages').
+  newest="$(ls -t out/k6-aws-2*.json 2>/dev/null | head -1 || true)"
+  if [[ -n "$newest" && "$newest" -nt "$started" ]]; then
+    echo; echo "seeded $sha ($newest); next: WIPE_DATA=0 loadtest/bisect-odb.sh <a later merge>"
+    exit 0
+  fi
+  echo "the seed for $sha collected no load summary: the data may be incomplete" >&2; exit 1
+fi
+
+env "${pinned[@]}" WIPE_DATA="${WIPE_DATA:-1}" \
   loadtest/aws-run.sh --no-subscribers --minutes "${BISECT_MINUTES:-5}" "${@:2}"
 
 echo

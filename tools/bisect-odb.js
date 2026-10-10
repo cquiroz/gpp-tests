@@ -1,32 +1,36 @@
 #!/usr/bin/env node
 /**
- * Find the lucuma-odb merge that made the odb slower, one AWS step at a time
- * (handoff-generalize-odb-bisect.md).
+ * Find the lucuma-odb merge that made the odb slower, one AWS step at a time.
+ * The guide is loadtest/BISECT.md.
  *
+ *   node tools/bisect-odb.js --good=3137 --bad=3152 --dry-run        # the window and cost, no AWS
  *   node tools/bisect-odb.js --good=3137 --bad=3152                  # PR numbers or commit shas
+ *   node tools/bisect-odb.js --good=3137 --bad=3152 --upgrade-from   # each merge on seeded data
  *   node tools/bisect-odb.js --good=3137 --bad=3152 --signal="odb_step_overhead p(95)>1000"
- *   node tools/bisect-odb.js --good=3137 --bad=3152 --dry-run        # the window, no AWS
- *   node tools/bisect-odb.js --good=3137 --bad=3152 -- --load        # flags after -- go to aws-run.sh
+ *   node tools/bisect-odb.js --good=3137 --bad=3152 -- --minutes 10  # flags after -- go to aws-run.sh
  *   node tools/bisect-odb.js --resume=out/bisect-odb-<stamp>.json   # carry on after a stop
- *   node tools/bisect-odb.js --judge [--signal=…] [<stamp>]         # read one collected run
+ *   node tools/bisect-odb.js --judge [--signal=…] [<stamp>]         # judge one collected run
  *
- * The window is the first-parent chain of main merges from good to bad, read from GitHub's
- * compare API (paginated, so no 100-run limit). Each step is `loadtest/bisect-odb.sh <sha>`:
- * about 25 minutes and $0.60, from an empty database unless WIPE_DATA=0. The ends run first,
- * because an end that does not reproduce from empty is the first thing to learn (it hid the
- * 2026-10-07 regression); `--trust-ends` skips them. A merge with no image (CI cancelled) or
- * whose run recorded no signal is skipped, and the culprit range widens over it.
+ * The window is the first-parent chain of main merges from good to bad (GitHub's compare API,
+ * paginated). The ends run first unless --trust-ends, then the window halves. A merge with no
+ * image or no signal is skipped, and the culprit range widens over it.
+ *
+ * A step is loadtest/bisect-odb.sh <sha>: one run from an empty database, about 25 minutes and
+ * $0.60. With --upgrade-from[=<PR|sha>] (default: the good end), each step checks the
+ * merge's images, seeds ~20k observations on the upgrade-from merge (bisect-odb.sh --seed),
+ * then boots the merge on that data with WIPE_DATA=0 and judges it: about 95 minutes and
+ * $2.10, for regressions that need data, as the 2026-10-07 one did.
  *
  * The signal (lib/bisect.js) is `<source> <expression>`, SLOW when the expression holds:
- * `cpu:postgres med>400` (the default), `cpu:odb avg>200`, or any metric in the k6 summary
- * export such as `odb_step_overhead p(95)>1000`.
+ * `cpu:postgres med>400` (the default, also BISECT_SIGNAL), `cpu:<container> avg|min|med|max|p(N)…`,
+ * or any metric in the k6 summary export, such as `odb_step_overhead p(95)>1000`.
  *
- * State is saved to out/bisect-odb-<stamp>.json after every step. When a step fails without
- * collecting a run (no capacity, a broken stack), the search stops there and prints the
- * --resume command; nothing is judged from a run that did not happen.
+ * State and a Markdown table go to out/bisect-odb-<stamp>.{json,md} after every step. A step
+ * that collects no run (no capacity, a broken boot, an expired HEROKU_API_KEY) stops the
+ * search with the --resume command; nothing is judged from it.
  *
- * Exit code: 0 when a culprit is named, 1 when the search stopped on a finding about the ends
- * or an inconsistency, 2 on bad input or a failed step.
+ * Exit code: 0 when a culprit is named; 1 when the search stopped on a finding (good end SLOW,
+ * bad end FAST, an end unusable, an inconsistency); 2 on bad input or a failed step.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -39,6 +43,8 @@ import {
   parseSignal,
   prNumber,
   renderBisectTable,
+  stepCommands,
+  upgradeConflicts,
 } from "../lib/bisect.js";
 
 const REPO = "gemini-hlsw/lucuma-odb";
@@ -125,6 +131,20 @@ function collectedRun(since = 0, stamp) {
 }
 
 /**
+ * The stamp of the load summary a seed collected since `since` (ms): out/k6-aws-<stamp>.json.
+ *
+ * @param {number} since
+ */
+function seededRun(since) {
+  return readdirSync("out")
+    .map((name) => /^k6-aws-(\d{8}T\d{6}Z)\.json$/.exec(name))
+    .filter((m) => m !== null && statSync(`out/${m[0]}`).mtimeMs >= since)
+    .map((m) => /** @type {string} */ (/** @type {RegExpExecArray} */ (m)[1]))
+    .sort()
+    .pop();
+}
+
+/**
  * One line with the signal's verdict, then the context a reader wants beside it whatever the
  * signal: the three CPU medians and the execution numbers.
  *
@@ -172,7 +192,7 @@ if (args.has("judge")) {
   process.exit(judgement.verdict === "NO-DATA" ? 2 : 0);
 }
 
-/** @type {{signal: string, good: string, bad: string, trustEnds: boolean, awsArgs: string[], merges: import("../lib/bisect.js").Merge[], steps: Record<string, import("../lib/bisect.js").Step>}} */
+/** @type {{signal: string, good: string, bad: string, trustEnds: boolean, upgradeFrom?: string, awsArgs: string[], merges: import("../lib/bisect.js").Merge[], steps: Record<string, import("../lib/bisect.js").Step>}} */
 let state;
 let statePath;
 if (args.has("resume")) {
@@ -183,7 +203,8 @@ if (args.has("resume")) {
   const goodRef = args.get("good");
   const badRef = args.get("bad");
   if (!goodRef || !badRef) {
-    console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(2, 29).join("\n").replace(/^ \* ?/gm, ""));
+    const source = readFileSync(new URL(import.meta.url), "utf8");
+    console.log(source.slice(source.indexOf("/**") + 4, source.indexOf(" */")).replace(/^ \* ?/gm, ""));
     process.exit(2);
   }
   try {
@@ -199,7 +220,29 @@ if (args.has("resume")) {
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
-  state = { signal: signalSpec, good, bad, trustEnds: args.has("trust-ends"), awsArgs, merges, steps: {} };
+  /** @type {string|undefined} */
+  let upgradeFrom;
+  if (args.has("upgrade-from")) {
+    const conflicts = upgradeConflicts(awsArgs, process.env);
+    if (conflicts.length > 0) fail(`--upgrade-from cannot run with:\n  ${conflicts.join("\n  ")}`);
+    const seedRef = /** @type {string} */ (args.get("upgrade-from"));
+    upgradeFrom = seedRef === "true" ? good : resolveSha(seedRef);
+    // Migrations only go forward: every merge in the window must be at or after the seed.
+    const status = capture("gh", ["api", `repos/${REPO}/compare/${upgradeFrom}...${good}`, "--jq", ".status"]);
+    if (status !== "ahead" && status !== "identical") {
+      fail(`--upgrade-from ${seedRef} must be at or before the good end (compare says ${status})`);
+    }
+  }
+  state = {
+    signal: signalSpec,
+    good,
+    bad,
+    trustEnds: args.has("trust-ends"),
+    ...(upgradeFrom ? { upgradeFrom } : {}),
+    awsArgs,
+    merges,
+    steps: {},
+  };
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
   statePath = `out/bisect-odb-${stamp}.json`;
 }
@@ -211,14 +254,26 @@ const save = () => {
 };
 
 const inner = state.merges.length - 2;
-const ends = state.trustEnds ? 0 : 2;
+const steps = Math.ceil(Math.log2(inner + 1)) + (state.trustEnds ? 0 : 2);
+const [stepMinutes, stepDollars] = state.upgradeFrom ? [95, 2.1] : [25, 0.6];
 console.log(
-  `window: ${state.merges.length} merges (${inner} between the ends), about ${Math.ceil(Math.log2(inner + 1)) + ends} steps · signal ${state.signal}`,
+  `window: ${state.merges.length} merges (${inner} between the ends) · signal ${state.signal}` +
+    (state.upgradeFrom ? ` · upgrade from ${state.upgradeFrom.slice(0, 8)}` : " · from an empty database"),
+);
+console.log(
+  `about ${steps} steps × ${stepMinutes} min ≈ ${((steps * stepMinutes) / 60).toFixed(1)} h, $${(steps * stepDollars).toFixed(2)}`,
 );
 for (const m of state.merges) console.log(`  ${m.sha.slice(0, 8)} ${m.pr ? `#${m.pr}` : "     "} ${m.title}`);
 
 if (args.has("dry-run")) {
-  console.log(`\nfirst step: loadtest/bisect-odb.sh ${"probe" in nextProbe(state) ? /** @type {any} */ (nextProbe(state)).probe : "—"} ${state.awsArgs.join(" ")}`);
+  const next = nextProbe(state);
+  if ("probe" in next) {
+    console.log("\nfirst step:");
+    for (const command of stepCommands({ sha: next.probe, upgradeFrom: state.upgradeFrom, awsArgs: state.awsArgs })) {
+      const env = Object.entries(command.env).map(([k, v]) => `${k}=${v} `).join("");
+      console.log(`  ${env}loadtest/bisect-odb.sh ${command.args.join(" ")}`);
+    }
+  }
   process.exit(0);
 }
 save();
@@ -260,29 +315,49 @@ for (;;) {
   const sha = next.probe;
   const merge = state.merges.find((m) => m.sha === sha);
   console.log(`\n=== step: ${sha.slice(0, 8)}${merge?.pr ? ` #${merge.pr}` : ""} ${merge?.title ?? ""}`);
-  const started = Date.now();
-  const step = spawnSync("loadtest/bisect-odb.sh", [sha, ...state.awsArgs], {
-    stdio: "inherit",
-    env: { ...process.env, BISECT_SIGNAL: state.signal },
-  });
-  if (step.status === EXIT_UNBUILT) {
+  const stop = (/** @type {string} */ why) => {
+    save();
+    console.error(`\n${why}; nothing judged.\nfix the cause, then: node tools/bisect-odb.js --resume=${statePath}`);
+    process.exit(2);
+  };
+  /** @type {string|undefined} */
+  let seedStamp;
+  /** @type {ReturnType<typeof collectedRun>} */
+  let run;
+  let unbuilt = false;
+  for (const command of stepCommands({ sha, upgradeFrom: state.upgradeFrom, awsArgs: state.awsArgs })) {
+    const started = Date.now();
+    const result = spawnSync("loadtest/bisect-odb.sh", command.args, {
+      stdio: "inherit",
+      env: { ...process.env, ...command.env, BISECT_SIGNAL: state.signal },
+    });
+    if (command.role === "seed") {
+      if (result.status === EXIT_UNBUILT) fail(`the upgrade-from merge ${state.upgradeFrom} has no image`);
+      seedStamp = seededRun(started);
+      if (result.status !== 0 || !seedStamp) stop(`the seed for ${sha.slice(0, 8)} did not finish (exit ${result.status})`);
+      continue;
+    }
+    if (result.status === EXIT_UNBUILT) {
+      unbuilt = true;
+      break;
+    }
+    if (command.role === "check") {
+      if (result.status !== 0) stop(`checking the images of ${sha.slice(0, 8)} failed (exit ${result.status})`);
+      continue;
+    }
+    run = collectedRun(started);
+    if (!run) stop(`the step for ${sha.slice(0, 8)} collected no execution run (exit ${result.status})`);
+  }
+  if (unbuilt || !run) {
     state.steps[sha] = { verdict: "UNBUILT" };
     save();
     continue;
-  }
-  const run = collectedRun(started);
-  if (!run) {
-    save();
-    console.error(
-      `\nthe step for ${sha.slice(0, 8)} collected no execution run (exit ${step.status}); nothing judged.\n` +
-        `fix the cause, then: node tools/bisect-odb.js --resume=${statePath}`,
-    );
-    process.exit(2);
   }
   const { judgement } = describeRun(signal, run);
   state.steps[sha] = {
     verdict: judgement.verdict,
     stamp: run.stamp,
+    ...(seedStamp ? { seedStamp } : {}),
     ...(judgement.observed === undefined ? {} : { observed: judgement.observed }),
     ...(judgement.reason ? { reason: judgement.reason } : {}),
   };

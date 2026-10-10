@@ -39,8 +39,16 @@ Actions 2, 1 and 4 are built and unit-tested; no AWS run has used them yet.
   in the scratchpad drove the loop to a planted culprit, through an unbuilt merge, a failed
   step plus `--resume`, and a fast bad end.
 
-Open: action 3 (`--upgrade-from`) needs the snapshot-versus-reseed decision; action 5
-waits on IT.
+Action 3 is built as option a (re-seed per step, Carlos's call 2026-10-10): `--upgrade-from[=<ref>]`
+runs `bisect-odb.sh --check <candidate>`, `--seed <upgrade-from>` (wipe + regression + `--load`,
+no execution) and `WIPE_DATA=0 bisect-odb.sh <candidate>` per step, about 95 minutes and $2.10.
+It refuses `--load`, `--terminate`, `--no-execution`, `--regression-only`, `NEW_PAIR=1` and a
+preset `WIPE_DATA`. Simulated end to end with a data-dependent fake step (finds #3145, skips an
+unbuilt merge after the check alone, stops and resumes on a failed seed); not yet run on AWS.
+The guide is `loadtest/BISECT.md`.
+
+Open: a faster restore per step (option b, `pg_dump`, or c, an EBS snapshot, which needs IT's
+procedure checked) would bring a step back to about 25 minutes; action 5 waits on IT.
 
 ## What exists now
 
