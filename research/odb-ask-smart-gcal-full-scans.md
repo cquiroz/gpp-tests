@@ -9,6 +9,10 @@ ask 2 until the control run says whether the regression needs a large database.
 the first production deploy of a post-#3145 build.** **Reproduced the same evening** (section
 "Reproduced"): upgrading #3137 → #3152 in place on 20k observations sent ~12k of them back to
 obscalc and saturated Postgres. The likely trigger is #3145's generator-hash change.
+**Fixed and verified (2026-10-11):** [#3174](https://github.com/gemini-hlsw/lucuma-odb/pull/3174)
+makes the lookup use the index. The same upgrade, #3137 → #3174, reads FAST: the recompute of
+all 20,141 observations finished in about three minutes, then Postgres dropped to ~15 %
+(section "Fixed in #3174").
 Full history, numbers and earlier hypotheses: [`execution-overhead-2026-10-07.md`](execution-overhead-2026-10-07.md).
 
 ## The ask
@@ -156,6 +160,50 @@ backlog lasts in proportion to the number of observations. Ours drained at rough
   recompute so execution traffic keeps its share of Postgres.
 - **Treat a hash change as a deployment step.** Recompute before promotion, or during a
   window with no observing.
+
+## Fixed in #3174 (merged 2026-10-10), verified 2026-10-11
+
+[#3174](https://github.com/gemini-hlsw/lucuma-odb/pull/3174) ("Use the search index for smart
+GCAL lookups", merge `d9d71f93`) replaces `IS NOT DISTINCT FROM` with `col = $x` when the value
+is present and `col IS NULL` when it is absent. Postgres can then serve the lookup from the
+existing b-tree index. The PR measures 12.7–13.3 ms down to 0.17–0.29 ms per lookup, an index
+scan reading about 180 pages instead of about 5,050.
+
+It makes each lookup cheap. It does not stop the recompute that follows the hash change, so we
+checked it with the reproduction again, the fix as the upgrade:
+
+```
+loadtest/bisect-odb.sh --seed 3137          # 18:30 UTC: 20,141 observations on #3137, all ready
+WIPE_DATA=0 loadtest/bisect-odb.sh 3174     # 19:40 UTC: upgrade in place to #3174
+```
+
+Images: odb and obscalc `d9d71f93`, ITC and SSO `1c675438` (#3169, the newest at or before it),
+digests in `out/images-aws-20261011T195138Z.json`.
+
+| | #3137 → #3152 (2026-10-09, before the fix) | #3137 → #3174 (2026-10-11, the fix) |
+|---|---|---|
+| Postgres CPU, median over the run | 1308 % | 129 % |
+| Postgres CPU, after the recompute | never ended within the run | 13–17 % |
+| obscalc at the end of the run | 11,697 pending · 559 calculating · 7,883 ready | 20,141 ready |
+| `t_smart_gmos_north` index scans | 0 | 483,102 |
+| step overhead p95 | 1846 ms | 464 ms |
+| RecordVisit p95 | 1057 ms | 140 ms |
+| execution and errors SLOs | — | pass (checks 100 %, 0 GraphQL errors) |
+
+The recompute still happens, and it is visible. For the first three minutes after boot
+(19:47–19:50 UTC), obscalc ran at 600–685 % CPU and Postgres at 360–445 %. Then the backlog was
+empty and Postgres fell to 13–17 % for the rest of the run. Before the fix, the same backlog held
+Postgres near 1300 % for the whole run and was still more than half pending at the end.
+
+How to read the scan counts: Postgres statistics accumulate from the seed on. The 471,759
+sequential scans of `t_smart_gmos_north` belong to the seed's 40 minutes on #3137, whose query
+cannot use the index (the run before the fix shows 0 index scans). The 483,102 index scans can
+only come from #3174.
+
+What remains for production is the burst itself. The first deploy of a post-#3145 build recomputes
+every observation once. Here that took three minutes for 20k observations on an m7i.4xlarge, at
+a Postgres load the execution SLOs tolerated (step overhead p95 464 ms over the whole run,
+burst included). The production database's size and hardware decide how long it lasts there.
 
 ## Why #3145 was the first suspect (unconfirmed)
 

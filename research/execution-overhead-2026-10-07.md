@@ -1,6 +1,8 @@
 # Execution step overhead doubled on the 2026-10-07 odb builds
 
 > **Follow-up for the odb team:** [`odb-ask-smart-gcal-full-scans.md`](odb-ask-smart-gcal-full-scans.md) (2026-10-09) — the cause, the ask and the numbers on one page.
+>
+> **Resolved 2026-10-11:** fixed by lucuma-odb #3174 (the smart-GCAL lookup uses its index). Upgrading #3137 → #3174 in place on 20k observations reads FAST: Postgres 129 % median against 1308 % before the fix, step overhead p95 464 ms. The numbers are in the follow-up, section "Fixed in #3174".
 
 A handoff for the odb team, from the gpp-tests load target. Everything below is from the
 unattended AWS runs (`loadtest/aws-run.sh`): the same `m7i.4xlarge` target, the same
