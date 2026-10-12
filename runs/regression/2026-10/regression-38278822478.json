@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "testid": "regression-38278822478",
+  "suite": "regression",
+  "environment": "ephemeral",
+  "startedAt": "2026-10-12T16:38:49.000Z",
+  "endedAt": "2026-10-12T16:49:18.279Z",
+  "durationSeconds": 629.279,
+  "outcome": "pass",
+  "thresholds": {
+    "mode": "baseline",
+    "breaches": []
+  },
+  "images": {
+    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:5f867ab6f6608431f4304d4a8281c7cef3513bd28c6ec71c0156f2dad0b96870",
+    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:122e0e3552688cf9333d87094f8ab0be05cadb095eea56ac8448e657893044b0",
+    "itc": "registry.heroku.com/itc-dev/web@sha256:a4c983ccb8799979fb2b32785fc9d163f64eeabd5b023bb3d27f6611bf1e938b",
+    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:8505913e61600705dd125d029e4fbd611bb176b1625766ca3ce62dde5888bd24"
+  },
+  "scenarios": [
+    {
+      "name": "scenario 1: login by injected session [pi]",
+      "status": "passed",
+      "durationSeconds": 11.447
+    },
+    {
+      "name": "scenario 2: create a program [pi]",
+      "status": "passed",
+      "durationSeconds": 2.238
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [pi]",
+      "status": "passed",
+      "durationSeconds": 14.208
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [pi]",
+      "status": "skipped",
+      "durationSeconds": 0.002
+    },
+    {
+      "name": "scenario 1: login by injected session [staff]",
+      "status": "passed",
+      "durationSeconds": 8.265
+    },
+    {
+      "name": "scenario 2: create a program [staff]",
+      "status": "passed",
+      "durationSeconds": 1.731
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [staff]",
+      "status": "passed",
+      "durationSeconds": 16.518
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [staff]",
+      "status": "skipped",
+      "durationSeconds": 0.004
+    },
+    {
+      "name": "scenario 1: login as guest",
+      "status": "passed",
+      "durationSeconds": 8.628
+    },
+    {
+      "name": "scenario 2: create a program",
+      "status": "passed",
+      "durationSeconds": 2.105
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration",
+      "status": "passed",
+      "durationSeconds": 11.513
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload",
+      "status": "skipped",
+      "durationSeconds": 0.011
+    },
+    {
+      "name": "observing mode: GMOS North long slit",
+      "status": "passed",
+      "durationSeconds": 25.754
+    },
+    {
+      "name": "observing mode: GMOS South long slit",
+      "status": "passed",
+      "durationSeconds": 26.153
+    },
+    {
+      "name": "observing mode: GMOS North imaging",
+      "status": "passed",
+      "durationSeconds": 34.687
+    },
+    {
+      "name": "observing mode: GMOS South imaging",
+      "status": "passed",
+      "durationSeconds": 28.489
+    },
+    {
+      "name": "observing mode: Flamingos-2 long slit",
+      "status": "passed",
+      "durationSeconds": 28.001
+    },
+    {
+      "name": "observing mode: Flamingos-2 imaging",
+      "status": "passed",
+      "durationSeconds": 27.848
+    },
+    {
+      "name": "observing mode: GNIRS imaging",
+      "status": "passed",
+      "durationSeconds": 25.87
+    },
+    {
+      "name": "observing mode: GNIRS long slit",
+      "status": "passed",
+      "durationSeconds": 27.622
+    },
+    {
+      "name": "observing mode: GNIRS IFU",
+      "status": "passed",
+      "durationSeconds": 26.894
+    },
+    {
+      "name": "observing mode: IGRINS-2 long slit",
+      "status": "passed",
+      "durationSeconds": 28.771
+    },
+    {
+      "name": "observing mode: GHOST IFU",
+      "status": "passed",
+      "durationSeconds": 34.958
+    },
+    {
+      "name": "observing mode: visitor",
+      "status": "passed",
+      "durationSeconds": 12.359
+    },
+    {
+      "name": "observing mode: Keck exchange",
+      "status": "passed",
+      "durationSeconds": 11.584
+    },
+    {
+      "name": "observing mode: Subaru exchange",
+      "status": "passed",
+      "durationSeconds": 11.585
+    },
+    {
+      "name": "scenario 1: staff opens a call for proposals",
+      "status": "passed",
+      "durationSeconds": 0.156
+    },
+    {
+      "name": "scenario 2: the PI's proposal is written against that call",
+      "status": "passed",
+      "durationSeconds": 3.398
+    },
+    {
+      "name": "scenario 3: Explore shows the proposal, and refuses to submit it incomplete",
+      "status": "passed",
+      "durationSeconds": 8.799
+    },
+    {
+      "name": "scenario 4: the ODB refuses to submit without attachments, then submits and retracts once both are uploaded",
+      "status": "passed",
+      "durationSeconds": 1.391
+    },
+    {
+      "name": "scenario 5: Explore's own Submit and Retract buttons drive the same lifecycle",
+      "status": "passed",
+      "durationSeconds": 8.866
+    },
+    {
+      "name": "a fabricated standard PI drives Explore via cookie injection",
+      "status": "passed",
+      "durationSeconds": 8.362
+    }
+  ],
+  "metrics": {
+    "readP95Ms": 140.055,
+    "writeP95Ms": 123.951,
+    "p95Ms": 126.86,
+    "errorRate": 0,
+    "iterations": 1,
+    "httpReqs": 105
+  },
+  "runUrl": "https://github.com/cquiroz/gpp-tests/actions/runs/38278822478"
+}
