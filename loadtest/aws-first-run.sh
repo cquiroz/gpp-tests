@@ -656,8 +656,19 @@ CADDY_MEM_LIMIT=$(pct 8) PG_MEM_LIMIT=$(pct 6) SSO_MEM_LIMIT=$(pct 4) \
 HASURA_MEM_LIMIT=$(pct 2) PG_MAX_CONNECTIONS=400"
 say "memory limits for ${TARGET_MIB}MiB:"
 say "  odb $(pct 40) (heap ${ODB_HEAP_MIB}m)  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
-note "  Caps rather than reservations. Override any of them in the environment; a target that"
-note "  only serves k6 does not need hasura at all (it is Explore's preferences service)."
+note "  Caps rather than reservations. A target that only serves k6 does not need hasura at all"
+note "  (it is Explore's preferences service)."
+
+# Production-limits runs (research/production-shape.md §0): these pass from this shell to the
+# target when set, after the defaults above, so they win. Unset, the stack keeps its defaults:
+# JVM-sized pools, no CPU cap on Postgres, 400 connections.
+for var in ODB_MAX_CONNECTIONS OBSCALC_MAX_CONNECTIONS PG_CPUS PG_MAX_CONNECTIONS; do
+  if [[ -n "${!var:-}" ]]; then
+    [[ "${!var}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "$var must be a number (got '${!var}')"
+    LIMITS="$LIMITS $var=${!var}"
+    say "  $var=${!var} (from this shell)"
+  fi
+done
 
 # Attachments go to the real bucket when the preflight could see it (S3_MODE=bucket boots
 # the re-signing proxy, which signs with the instance role), else to the stack's own store.

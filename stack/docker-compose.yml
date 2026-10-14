@@ -36,6 +36,14 @@ x-odb-env: &odb-env
   CLOUDCUBE_URL: https://${S3_BUCKET:-gpp-tests}.s3.invalid/${S3_PREFIX:-attachments}
   AWS_ENDPOINT_URL_S3: ${S3_ENDPOINT_URL:-http://s3:7070}
   FILE_UPLOAD_MAX_MB: "10"
+  # Connection pools. Unset (the default) leaves each JVM its own `2 × cores + 1`, 33 on
+  # the 16-core load target. Set, they pass through as given: production pins the odb to 8
+  # per web dyno and obscalc to 8 (research/production-shape.md §0), so a production-limits
+  # run sets ODB_MAX_CONNECTIONS=16 (one container standing in for two dynos) and
+  # OBSCALC_MAX_CONNECTIONS=8. No value here means compose passes the variable only when the
+  # shell has it.
+  ODB_MAX_CONNECTIONS:
+  OBSCALC_MAX_CONNECTIONS:
   # Dummy Mailgun values: required to boot, unused (ODB-README).
   MAILGUN_API_KEY: gpp-tests
   MAILGUN_DOMAIN: mail.example.com
@@ -93,6 +101,10 @@ services:
   postgres:
     image: postgres:15
     mem_limit: ${PG_MEM_LIMIT:-2g}
+    # A CPU cap for runs that stand in for a smaller database than the host (production's
+    # odb runs on a shared `essential-2` plan, research/production-shape.md §0). 0, the
+    # default, is no cap.
+    cpus: ${PG_CPUS:-0}
     environment:
       POSTGRES_USER: ${PG_USER:-jimmy}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-banana}
