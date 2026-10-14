@@ -288,6 +288,9 @@ both live only as long as the stack does.
   container limit minus ~600 MB, which under amd64 emulation on a Mac is too little room for
   everything else. Boot with `ODB_JAVA_OPTS='-Xms768m -Xmx768m'` (or a larger `ODB_MEM_LIMIT`);
   the reasoning is in `research/odb-memory-growth-handoff.md`.
+- **`npm run verify:operations` fails with `CERT_HAS_EXPIRED`.** The `caddy_data` volume is
+  more than seven days old: Caddy renews its intermediate on boot but keeps serving the leaf
+  that the stale one signed. `docker restart gpp-tests-caddy-1` fixes it in seconds.
 - **A metric label was rejected.** That is `lib/tags.js` doing its job; add the dimension to
   the annotation instead, or take the series budget hit knowingly.
 - **Submitting a proposal fails with `email_send_error`.** The odb reached something other

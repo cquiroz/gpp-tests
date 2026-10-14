@@ -2,7 +2,7 @@
 id: 029
 title: "Upstream ask: a data-testid contract for Explore"
 labels: [wayfinder:task]
-status: open
+status: closed
 assignee: carlos.quiroz
 blocked-by: []
 ---
@@ -232,3 +232,29 @@ Two distinct failures, worth separating for whoever picks this up:
 This is the first real exercise of the per-merge lane's premise (ticket 010) and it worked
 as designed: a merge to lucuma-apps `main` broke the journey, and the suite caught it the
 same day. Needs its own ticket — it is Explore work, not gpp-tests work.
+
+**Since then (2026-10-14):** the dev deploy came back. The nightly browser suite against
+Firebase dev hosting is green every night (2026-10-13: 29 passed, 3 skipped), so the two
+failures above needed no ticket of their own.
+
+## Resolution
+
+**Closed 2026-10-14.** The ask landed as
+[lucuma-apps#1580](https://github.com/gemini-hlsw/lucuma-apps/pull/1580), merged to `main` as
+`46c237cbae` and deployed to Explore's dev hosting. It carries 18 of the 23 ids, named as asked,
+plus the rename-and-removal rule in `explore/CLAUDE.md` (`ee04a1df43`). The migration of
+`tests/support/selectors.ts` is `2ed8cd5`, merged in `5e209d4`.
+
+Against the ask's four acceptance criteria:
+
+| # | Criterion | Outcome |
+|---|---|---|
+| 1 | Every locator on `getByTestId`, nothing identifying by position, class or copy | **Met for every locator in use.** Two shapes differ: `addTargetButton` keeps upstream's `.locator("button").first()` inside its wrapper, and the menu item is `#explore-menu-manage-programs`. The four obs-badge locators stay on classes and text, used only by the parked scenario 4. |
+| 2 | Green against a local bundle carrying the ids | **Met** (lucuma-apps `b6724eb18a`, 14 passed, 3 skipped), and green nightly against the dev deploy since. |
+| 3 | Deleting an id fails lucuma-apps CI | **Declined upstream.** Replaced by the written rule in `explore/CLAUDE.md`, with no check behind it. |
+| 4 | `/testids.json` in the bundle artifact | **Declined upstream.** No manifest, no version; the ids are literals at each element. |
+
+Carried to [032](032-obs-badge-testids-and-bundle-id-check.md): items 2–6 (the obs-badge
+subtitle ids, still absent from `ObsBadge.scala` on lucuma-apps `main` as of 2026-10-10), which
+keep scenario 4 skipped; and the bundle id check on our side, which is what is left of
+criterion 3. The Caddy stale-leaf finding is in the README's troubleshooting list.

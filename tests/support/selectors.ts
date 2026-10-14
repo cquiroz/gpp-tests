@@ -229,7 +229,7 @@ export const sequenceSteps = (page: Page): Locator =>
  *
  * Items 2–6 of the ask were not shipped, so these four keep the stylesheet handles they
  * always had. They are used only by the journey's scenario 4, which is skipped for that
- * reason (ticket 029); `obsBadgeAddDescription` is used by nothing at all.
+ * reason (tickets 029 and 032); `obsBadgeAddDescription` is used by nothing at all.
  */
 
 /**

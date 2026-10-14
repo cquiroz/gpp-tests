@@ -152,12 +152,15 @@ manual path is green under NOIRLab's us-west-2 procedure and the `surge` workflo
 inside `nl-vpc`), **018** (the surge profile is built and proven locally (2026-10-07,
 `k6/surge.js`, `loadtest/aws-run.sh --surge`); both tiers pass every class on AWS, rerun on
 2026-10-14 with the subscriber-JWT fix (0 failed connects); what remains is the `surge`
-workflow running from CI, which waits on 016), **024** (telemetry stack, HITL),
-**027** (read production sizing, HITL). 021 and 022 closed 2026-10-03, 028 closed 2026-10-05,
+workflow running from CI, which waits on 016), **024** (telemetry stack, HITL).
+027 closed 2026-10-14: production's odb runs on an `essential-2` Postgres (shared, 40
+connections) with pools of 8/8/4, far below the AWS target. The surge PASS is about the
+software, and 026 now has the sizes to test production's. 021 and 022 closed 2026-10-03, 028 closed 2026-10-05,
 017 closed 2026-10-06, 023 closed 2026-10-07.
 
-Off that order and already claimed: **029** (the `data-testid` contract ask to
-lucuma-apps), carried upstream by Carlos rather than built here, as 019 was.
+Off that order: **032** (the obs-badge subtitle testids upstream dropped from 029, which keep
+journey scenario 4 skipped, plus a check here that our ids are in the bundle). 029 closed
+2026-10-14: 18 of 23 ids shipped in lucuma-apps#1580 and `selectors.ts` reads them.
 
 ## Not yet specified
 
