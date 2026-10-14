@@ -156,7 +156,7 @@ failed checks were HTTP 500s on subtitle edits from the local stack, which still
 from the bisect against a database migrated past V1339 (`c_calibration_count`). They are not
 from the change.
 
-**What stands and what needs a rerun.** The execution, proposals, regular and errors rows stand
+**What stood and what needed a rerun** (done: runs 4 and 5 below). The execution, proposals, regular and errors rows stand
 for both tiers. The subscriber population was smaller than the tier for the last 45 minutes,
 which made those runs lighter than the claim. The other classes passed with room to spare under
 the lighter load, but the rerun is the measurement. The subscriptions row needs both tiers run
@@ -164,6 +164,53 @@ again with the fix: `WIPE_DATA=1 loadtest/aws-run.sh --surge realistic`, then `�
 Watch item for the reruns: odb memory climbed 6.4 → ~11 GiB over 75 minutes in both runs, under
 the 15.7 GiB heap cap. That may be the heap growing into its cap rather than a leak; a flat end
 of the line would settle it.
+
+**Runs 4 and 5, the reruns with the JWT fix (2026-10-14).** Both tiers again, on the same
+`-dev` images for both (odb `sha256:9fcf04d12d34…`, obscalc `sha256:2944a0338b6c…`),
+`WIPE_DATA=1`, `cf7d6f4` on the generator. Both read **PASS on every row, failed connects
+included**, so the subscriptions class is now measured on the whole population.
+
+| | Run 4 · realistic · 10-14 01:34 UTC | Run 5 · ceiling · 10-14 08:12 UTC |
+|---|---|---|
+| Files | `out/k6-aws-surge-realistic-20261014T025023Z.*` | `out/k6-aws-surge-ceiling-20261014T092820Z.*` |
+| Peak VUs | 315 | 427 |
+| Execution | PASS · step overhead p95 354 ms, p99 389 ms · 99 steps | PASS · p95 405 ms, p99 477 ms · 201 steps |
+| Proposals | PASS · submit p95 171 ms · 190 + 91 resubmissions · 0 dropped | PASS · submit p95 250 ms · 402 + 160 resubmissions · 0 dropped |
+| Regular | PASS | PASS |
+| Subscriptions | PASS · 751 sockets · event latency p95 100 ms, round trip 14 ms · **0 failed connects** · 0 lost · 0 reconnects | PASS · 1502 sockets · 151 ms, 21 ms · **0 failed connects** · 0 lost · 0 reconnects |
+| Errors | PASS · checks 100 % | PASS · checks 100 % |
+| Postgres CPU | median 343 %, max 628 % | median 368 %, max 712 % |
+| odb CPU · memory | median 241 % · 6.4 → 11.15 GiB | median 328 % · 6.2 → 11.4 GiB |
+
+Against runs 2 and 3, the full subscriber population costs some latency but stays well
+inside every budget. Event latency p95 rose from 74 to 100 ms (realistic) and from 81 to
+151 ms (ceiling). Ceiling step overhead p95 went from 354 to 405 ms. odb CPU went from
+214 % to 328 % median on the ceiling tier.
+
+**odb memory settles the watch item, mostly.** The odb jumps from about 6.3 to 10.7 GiB in the
+first five minutes, which is the JVM heap sizing up under load. It then creeps about
+0.5 GiB over the remaining 70 minutes (10.66 → 11.15 GiB realistic, 10.69 → 11.40 GiB
+ceiling) and does not hand memory back when the load stops, as a JVM in a container usually
+does not. That is not the shape of a leak at this length, and it is 4+ GiB under the
+15.7 GiB cap. A run several hours long would be the way to rule out a slow leak.
+
+**New watch item: Postgres CPU climbs through the steady state.** It does not hold flat
+over the 60-minute plateau: realistic goes about 190 % → 520 %, ceiling about 200 % → 360–660 %
+in its last 25 minutes, while the offered load stays constant. The likely cause is the
+tables growing under the run (every surge creates observations, proposals and steps from an
+empty database), with some query whose cost scales with them. It fits inside the budgets
+today. A longer plateau, or a run on a seeded database, would show whether it keeps
+climbing, and `out/pg-activity-surge-aws-<stamp>.txt` is the place to start looking.
+
+An attempt between the two (`out/aws-run-20261014T074735Z.log`) failed before the surge:
+the generator stopped answering ssh over SSM, and k6 never started. Its teardown then
+refused to stop the target, because its tag lookup read both tags empty. That was a failed
+lookup in the same outage, not changed tags: the next run reused the same pair, and both
+instances are stopped now with `gpp-tests:loadtest=1` and their names intact.
+
+**What remains:** "one full real run per tier" is done, and every class passes on both. The
+open part is the on-demand workflow running those runs from CI, which waits on IT's OIDC role
+(016).
 
 **Parked:** pre-seeding proposals during the ramp so the steady state is mostly
 retract/edit/resubmit churn (017's `RESUBMIT_SHARE` is 0.3 of later submissions); churn in

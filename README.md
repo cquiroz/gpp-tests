@@ -184,10 +184,9 @@ identity.
   `k6/lib/*-vu.js`, shared with its standalone script. On the load target it is
   `loadtest/aws-run.sh --surge [realistic|ceiling]`; the on-demand `surge` workflow is written
   and exits with a notice until IT grants CI an AWS role ([ticket 016](wayfinder/tickets/016-automate-aws-load-target.md)).
-  Both tiers have run on AWS (2026-10-11 realistic, 2026-10-13 ceiling) on the fixed odb:
-  execution, proposals, regular operations and errors pass; the subscriptions class needs a
-  rerun, because the subscriber VUs reused an expired JWT after 30 minutes (fixed 2026-10-13).
-  Proven locally on a short shape; the two full-length runs per tier are the next thing to do.
+  Both tiers pass every class on AWS (rerun 2026-10-14 after fixing subscriber VUs that
+  reused an expired JWT): step overhead p95 354 / 405 ms, submit p95 171 / 250 ms, event
+  latency p95 100 / 151 ms, 0 failed connects, checks 100 % (realistic / ceiling).
 - **The surge has its pass criteria and its verdict ([ticket 023](wayfinder/tickets/023-surge-slos-and-verdict.md), 2026-10-07).**
   `k6/surge-slos.json` holds the absolute SLOs per class of surge traffic; the execution,
   proposal and subscriber scripts arm them, and `tools/surge-verdict.js` renders a run's
