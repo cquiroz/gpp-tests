@@ -34,7 +34,7 @@ import {
   stepEventsAdded,
   updateObservationSubtitle,
 } from "../../lib/odb-operations.js";
-import { loginAsStandardUser } from "./auth.js";
+import { loginAsStandardUser, refreshed } from "./auth.js";
 import { loginAsPoolUser } from "./standard-users.js";
 import { gqlAsync } from "./graphql.js";
 import { GraphqlWsClient } from "./graphql-ws.js";
@@ -148,7 +148,7 @@ export function observeBrowserSession(fixture, opts) {
  * @param {{subscriptions: any[], measured: any, matches: (payload: any, subtitle: string) => boolean}} shape
  */
 async function runSession(fixture, label, opts, shape) {
-  const client = new GraphqlWsClient(fixture.session, { ...label });
+  const client = new GraphqlWsClient(liveSession(fixture), { ...label });
   try {
     await client.connect();
   } catch (error) {
@@ -186,6 +186,27 @@ async function runSession(fixture, label, opts, shape) {
 }
 
 /**
+ * The fixture's identity, its JWT refreshed whenever the client reads it: on every connect
+ * and every reconnect. A VU logs in once and runs session after session, each holding its
+ * socket for SESSION_SECONDS (600 in the surge, SSO's whole 10-minute JWT lifetime), so the
+ * login token is soon expired. The odb checks it only at `connection_init` and answers an
+ * expired one with 4403: from about minute 30 of the 2026-10-11 and 2026-10-13 surge runs,
+ * nearly every subscriber connect was refused (22k realistic, 45k ceiling) while the held
+ * sockets carried on.
+ *
+ * @param {Fixture} fixture
+ * @returns {{token: string}}
+ */
+function liveSession(fixture) {
+  return {
+    get token() {
+      fixture.session = refreshed(/** @type {any} */ (fixture.session));
+      return fixture.session.token;
+    },
+  };
+}
+
+/**
  * One measured edit: subtitle over HTTP, the matching event on our own subscription.
  * @returns {Promise<boolean>} whether the event arrived in time
  */
@@ -208,6 +229,7 @@ async function roundTrip(fixture, label, shape, listeners) {
     }, EVENT_TIMEOUT_MS);
   });
 
+  fixture.session = refreshed(fixture.session);
   const sentAt = Date.now();
   const ack = await gqlAsync(
     fixture.session,

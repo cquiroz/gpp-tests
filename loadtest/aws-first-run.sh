@@ -1216,7 +1216,7 @@ if [[ -n "$RAN_SUBS" ]]; then
   const m = s.metrics ?? {};
   const p = (k, q) => m[k]?.[q]?.toFixed(0) ?? "—";
   const c = (k) => m[k]?.count ?? 0;
-  console.log("  sockets opened     :", c("odb_ws_connections"), "· reconnects", c("odb_ws_reconnects"), "· unanswered pings", c("odb_ws_unanswered_pings"), "· lost events", c("odb_ws_lost_events"));
+  console.log("  sockets opened     :", c("odb_ws_connections"), "· reconnects", c("odb_ws_reconnects"), "· failed connects", c("odb_ws_connect_failures"), "· unanswered pings", c("odb_ws_unanswered_pings"), "· lost events", c("odb_ws_lost_events"));
   console.log("  ping               : explore-tab p95", p("odb_ws_ping{scenario:explore-tab}", "p(95)"), "ms · observe-browser p95", p("odb_ws_ping{scenario:observe-browser}", "p(95)"), "ms");
   console.log("  round trip (ack→event) : Explore p95", p("odb_ws_round_trip{operation:ProgramObservationsDelta}", "p(95)"), "ms · Observe p95", p("odb_ws_round_trip{operation:ObservationEdits}", "p(95)"), "ms");
   console.log("  event latency (send→event): Explore p95", p("odb_ws_event_latency{operation:ProgramObservationsDelta}", "p(95)"), "ms · Observe p95", p("odb_ws_event_latency{operation:ObservationEdits}", "p(95)"), "ms");

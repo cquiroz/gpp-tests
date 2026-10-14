@@ -18,6 +18,7 @@ import {
   readDuration,
   tags,
   writeDuration,
+  wsConnectFailures,
   wsConnections,
   wsMessages,
   wsPing,
@@ -73,9 +74,14 @@ export class GraphqlWsClient {
   connect() {
     if (this.connected) return Promise.resolve();
     if (this.connecting) return this.connecting;
-    this.connecting = this.open().finally(() => {
-      this.connecting = null;
-    });
+    this.connecting = this.open()
+      .catch((error) => {
+        wsConnectFailures.add(1, tags({ scenario: this.scenario }));
+        throw error;
+      })
+      .finally(() => {
+        this.connecting = null;
+      });
     return this.connecting;
   }
 

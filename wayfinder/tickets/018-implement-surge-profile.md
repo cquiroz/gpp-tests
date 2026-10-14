@@ -106,6 +106,65 @@ only comparable if they share a build: `ODB_IMAGE=…@sha256:59686ce8…` (the 1
 one for the surge measurement, and one run on the current build stays the record for the odb
 team.
 
+**Runs 2 and 3, on the fixed odb (2026-10-11 realistic, 2026-10-13 ceiling).** The 10-07
+regression was fixed by lucuma-odb #3174 (`research/odb-ask-smart-gcal-full-scans.md`), so
+both runs used the day's `-dev` images with `WIPE_DATA=1`. Both verdicts read **PASS on every
+row**, but the subscriptions class was measured on a population that stopped reconnecting
+30 minutes in. It is a bug in our subscriber VU, fixed below, and those two rows need a rerun.
+
+| | Run 2 · realistic · 10-11 21:22 UTC | Run 3 · ceiling · 10-13 13:07 UTC |
+|---|---|---|
+| Files | `out/k6-aws-surge-realistic-20261011T212249Z.*` | `out/k6-aws-surge-ceiling-20261013T142352Z.*` |
+| odb | `-dev` `sha256:2da16923f0d1…` | `-dev` `sha256:920ab68a64df…` |
+| Peak VUs | 315 | 427 |
+| Execution | PASS · step overhead p95 346 ms, p99 395 ms · 98 steps | PASS · p95 354 ms, p99 408 ms · 206 steps |
+| Proposals | PASS · submit p95 149 ms · 281 submissions · 0 dropped | PASS · submit p95 153 ms · 562 submissions · 0 dropped |
+| Regular | PASS · open program p95 27 ms, edit 80 ms, create observation 113 ms | PASS · 28 ms, 81 ms, 113 ms |
+| Subscriptions | PASS on what connected (event latency p95 74 ms, round trip 12 ms, 0 lost) · **22,487 + 549 failed connects** | PASS on what connected (81 ms, 14 ms, 0 lost) · **44,978 + 1,076 failed connects** |
+| Errors | PASS · checks 100 % of 826k | PASS · checks 100 % of 837k |
+| Postgres CPU | median 304 %, max 634 % | median 325 %, max 584 % |
+| odb CPU · memory | median 197 % · 6.4 → 10.9 GiB | median 214 % · 6.4 → 11.2 GiB |
+
+Against run 1 on the regressed build, Postgres fell from ~1270 % to ~310 % median. Step overhead
+p95 fell from 2817 ms to about 350 ms. Obscalc's definition wait for new proposal observations
+fell from 183 s to 22–24 ms. The ceiling tier doubles the submissions and steps at the same
+latencies, so the pair has headroom at this shape.
+
+**The failed connects are ours: expired JWTs.** The subscriber VUs logged in once and reused
+that token for every later session. The surge holds a session for 600 s, which is SSO's
+whole JWT lifetime. The odb checks the token only at `connection_init`, so held sockets carried
+on, but reconnects with the old token were refused. The odb log ends with 337
+`4403 Forbidden: Access denied` closes, each after `JwtExpirationException: The token is expired
+since 13:18–13:19`. That log keeps only the last 20,000 lines. Connects at +10 and +20 minutes
+still succeeded with the expired token; from +30, every one was refused, in run 1 too. Why the
+odb accepted them for a while (a cache in its SSO client?) was not checked. The standalone
+subscribers profile never ran long enough to show it.
+
+Two changes, 2026-10-13:
+
+- **`k6/lib/subscribers.js`** refreshes the identity's JWT before every connect, every
+  in-session reconnect and every HTTP edit, as the guest and proposal VUs already did.
+- **The verdict now catches it.** `odb_ws_connect_failures` counts every connect that never
+  reached `connection_ack`: refused, errored or timed out, first connect or reconnect. A new
+  subscriptions SLO in `k6/surge-slos.json` budgets it `count==0`, and the wizard's subscriber
+  summary prints it. Runs 2 and 3 would have failed that row.
+
+Local proof: 14 minutes of `k6/subscribers.js`, 12 VUs on 2-minute sessions, well past the JWT
+lifetime. Result: 75 sessions, 75 connections, **0 failed connects**, 0 lost events. The VUs
+made 10 refresh calls (437 requests = 415 checked operations + 12 logins + 10 refreshes). Its
+failed checks were HTTP 500s on subtitle edits from the local stack, which still runs odb #3146
+from the bisect against a database migrated past V1339 (`c_calibration_count`). They are not
+from the change.
+
+**What stands and what needs a rerun.** The execution, proposals, regular and errors rows stand
+for both tiers. The subscriber population was smaller than the tier for the last 45 minutes,
+which made those runs lighter than the claim. The other classes passed with room to spare under
+the lighter load, but the rerun is the measurement. The subscriptions row needs both tiers run
+again with the fix: `WIPE_DATA=1 loadtest/aws-run.sh --surge realistic`, then `… ceiling`.
+Watch item for the reruns: odb memory climbed 6.4 → ~11 GiB over 75 minutes in both runs, under
+the 15.7 GiB heap cap. That may be the heap growing into its cap rather than a leak; a flat end
+of the line would settle it.
+
 **Parked:** pre-seeding proposals during the ramp so the steady state is mostly
 retract/edit/resubmit churn (017's `RESUBMIT_SHARE` is 0.3 of later submissions); churn in
 the Explore population (the standalone subscribers profile keeps it); candidate image

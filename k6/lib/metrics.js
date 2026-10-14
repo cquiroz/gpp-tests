@@ -40,6 +40,8 @@ export const stepsExecuted = new Counter("gpp_execution_steps");
 //   odb_ws_ping              — our ping to the server's pong, the socket's responsiveness.
 //   odb_ws_connections       — sockets opened; odb_ws_reconnects — of those, reconnections
 //                              after a drop (so steady = connections − reconnects).
+//   odb_ws_connect_failures  — connects (first or re-) that never reached connection_ack:
+//                              refused (4403 for an expired JWT), errored or timed out.
 //   odb_ws_unanswered_pings  — pings with no pong inside the timeout.
 //   odb_ws_lost_events       — round trips whose event never arrived.
 //   odb_ws_messages          — frames received, `operation` = the protocol message type.
@@ -48,6 +50,7 @@ export const wsEventLatency = new Trend("odb_ws_event_latency", true);
 export const wsPing = new Trend("odb_ws_ping", true);
 export const wsConnections = new Counter("odb_ws_connections");
 export const wsReconnects = new Counter("odb_ws_reconnects");
+export const wsConnectFailures = new Counter("odb_ws_connect_failures");
 export const wsUnansweredPings = new Counter("odb_ws_unanswered_pings");
 export const wsLostEvents = new Counter("odb_ws_lost_events");
 export const wsMessages = new Counter("odb_ws_messages");

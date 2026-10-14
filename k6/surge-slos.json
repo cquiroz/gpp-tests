@@ -90,6 +90,11 @@
           "thresholds": ["p(95)<250"]
         },
         {
+          "name": "failed connects (refused, errored or timed out before connection_ack)",
+          "metric": "odb_ws_connect_failures",
+          "thresholds": ["count==0"]
+        },
+        {
           "name": "lost events",
           "metric": "odb_ws_lost_events",
           "thresholds": ["count==0"]

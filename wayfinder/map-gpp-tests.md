@@ -150,8 +150,10 @@ Open, unblocked, unclaimed: **011** (create the org repo), **016** (AWS automati
 manual path is green under NOIRLab's us-west-2 procedure and the `surge` workflow is written
 (2026-10-07); what remains is IT granting the OIDC role the workflow assumes, or a runner
 inside `nl-vpc`), **018** (the surge profile is built and proven locally (2026-10-07,
-`k6/surge.js`, `loadtest/aws-run.sh --surge`); what closes it is one full run per tier on
-AWS, started from a laptop, and their verdicts recorded), **024** (telemetry stack, HITL),
+`k6/surge.js`, `loadtest/aws-run.sh --surge`); both tiers ran on the fixed odb (2026-10-11,
+2026-10-13) and passed every class but subscriptions, whose VUs reused an expired JWT from
+minute 30 (fixed 2026-10-13, now caught by `odb_ws_connect_failures`); what closes it is a rerun
+of both tiers with the fix), **024** (telemetry stack, HITL),
 **027** (read production sizing, HITL). 021 and 022 closed 2026-10-03, 028 closed 2026-10-05,
 017 closed 2026-10-06, 023 closed 2026-10-07.
 
