@@ -202,6 +202,22 @@ empty database), with some query whose cost scales with them. It fits inside the
 today. A longer plateau, or a run on a seeded database, would show whether it keeps
 climbing, and `out/pg-activity-surge-aws-<stamp>.txt` is the place to start looking.
 
+*Traced (2026-10-14).* Every realistic run's `pg_stat_user_tables` puts the same table first:
+`t_exposure_time_mode` is scanned sequentially about 485 000 times per run, reading about
+33 billion rows (36 billion on the ceiling tier), against about 1.1 million index scans. It
+ends a run with about 138 000 rows, so each scan costs more as the run creates observations,
+which is the climb's shape. `t_observation` (6.4 billion rows read), `t_program`, `t_target`
+and `t_program_user` follow at a fifth or less. The next step is the query behind those scans
+(`pg_stat_statements` on the target, or `EXPLAIN` on the exposure-time-mode reads) and whether
+an index or a join change removes them; it is an odb finding, not a test one.
+
+**Run 6, production's pools on two web processes (2026-10-14, `20261014T150159Z`).** Realistic
+tier, `ODB_WEB_DYNOS=2 ODB_MAX_CONNECTIONS=8 OBSCALC_MAX_CONNECTIONS=8`: **PASS on every
+class**, pools held at 8 per process, 751 sockets with 0 failed connects and 0 lost across the
+two processes. Step overhead p95 473 ms (from 354), event latency p95 132 ms (from 100). The
+comparison table is in `research/production-shape.md` §0. Postgres CPU climbed the same way
+(about 250 % → 436 % over the plateau), so the climb is not a pool-size effect.
+
 An attempt between the two (`out/aws-run-20261014T074735Z.log`) failed before the surge:
 the generator stopped answering ssh over SSM, and k6 never started. Its teardown then
 refused to stop the target, because its tag lookup read both tags empty. That was a failed

@@ -84,6 +84,33 @@ instance delivers, so it is a second run, not part of the first. `PG_MAX_CONNECT
 mis-model production here, because SSO and Hasura share this stack's Postgres but have their
 own databases in production. The pools are the binding limit (28 of the 40).
 
+**Run on 2026-10-14 (`20261014T150159Z`, realistic tier): PASS on every class.** Same images
+and generator as the unconstrained run. The pools held: at collect time Postgres showed exactly
+8 connections from each of odb, odb2 and obscalc (24, against 26 in use on production's
+`essential-2` at the read).
+
+| | Unconstrained · `025023Z` | Production pools, 2 processes · `150159Z` |
+|---|---|---|
+| Step overhead p95 / p99 | 354 / 389 ms | 473 / 610 ms |
+| Submit p95 | 171 ms | 198 ms |
+| Event latency p95 · round trip p95 | 100 · 14 ms | 132 · 18 ms |
+| Sockets · failed connects · lost | 751 · 0 · 0 | 751 · 0 · 0 |
+| Checks · graphql errors | 100 % · 0 | 100 % · 0 |
+| odb CPU median (10–70 min) | 246 % | 141 % + 139 % |
+| odb memory at 70 min | 11.15 GiB | 6.17 + 6.27 GiB |
+| Postgres CPU median · max | 366 % · 628 % | 372 % · 647 % |
+| Postgres memory at 70 min | 1.76 GiB | 0.85 GiB |
+
+Pools of 8 cost about a third more on the slowest paths and stay far inside every budget, and
+delivery across the two processes lost nothing at full population. Neither odb log has a
+warning or an error.
+
+What this does not cover is Postgres itself: it still had the box's cores and used up to
+6.5 of them. Production's `essential-2` is shared hardware with a CPU share nobody has
+measured, so a `PG_CPUS` run is the remaining step toward production's shape, and the
+Postgres CPU climb (ticket 018, now traced to sequential scans of `t_exposure_time_mode`)
+is the thing most likely to break first under a cap.
+
 ## 1. Sizing table (2026-09-02, before the read; §0 supersedes it)
 
 Confidence tags: **verified-by-probe** (live HTTP on 2026-09-02), **from-repo-config** (named in checked-in config/scripts on `main`), **inferred** (stated reasoning), **unknown** (only the Heroku control plane knows).
