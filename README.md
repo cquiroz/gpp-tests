@@ -69,7 +69,10 @@ certificate, the throwaway SSO keypair, the service JWT — is per-run and gitig
 
 Useful switches: `SKIP_PULL=1` (use local images), `FORCE=1` (regenerate certificate and
 keypair), `ODB_OTEL_ENDPOINT`/`ODB_OTEL_KEY` (ship ODB traces to Tempo), `CADDYFILE=./caddy/Caddyfile.bundle`
-plus `EXPLORE_BUNDLE_DIR=...` (serve a locally-built Explore instead of Firebase dev hosting).
+plus `EXPLORE_BUNDLE_DIR=...` (serve a locally-built Explore instead of Firebase dev hosting),
+`ODB_WEB_DYNOS=2` (two odb web processes behind Caddy, as production runs two dynos),
+`ODB_MAX_CONNECTIONS`/`OBSCALC_MAX_CONNECTIONS` (per-process pools; production's are 8 and 8)
+and `PG_CPUS` (a CPU cap on Postgres). The AWS wizard forwards the last four to the target.
 
 ## Running the load suite
 

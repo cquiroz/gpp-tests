@@ -38,9 +38,9 @@ x-odb-env: &odb-env
   FILE_UPLOAD_MAX_MB: "10"
   # Connection pools. Unset (the default) leaves each JVM its own `2 × cores + 1`, 33 on
   # the 16-core load target. Set, they pass through as given: production pins the odb to 8
-  # per web dyno and obscalc to 8 (research/production-shape.md §0), so a production-limits
-  # run sets ODB_MAX_CONNECTIONS=16 (one container standing in for two dynos) and
-  # OBSCALC_MAX_CONNECTIONS=8. No value here means compose passes the variable only when the
+  # per web dyno and obscalc to 8 (research/production-shape.md §0), so a production-shaped
+  # run sets ODB_WEB_DYNOS=2 ODB_MAX_CONNECTIONS=8 OBSCALC_MAX_CONNECTIONS=8 (the pool is
+  # per process, as it is per dyno). No value here means compose passes the variable only when the
   # shell has it.
   ODB_MAX_CONNECTIONS:
   OBSCALC_MAX_CONNECTIONS:
@@ -220,6 +220,21 @@ services:
       retries: 5
       start_period: 15m
 
+  # A second odb web process, as production runs two web dynos behind Heroku's router
+  # (research/production-shape.md §0). Off unless ODB_WEB_DYNOS=2, which makes bootstrap add
+  # the `odb-2` profile and give Caddy both upstreams. It is the same image and environment,
+  # so it has its own JVM, heap and connection pool (ODB_MAX_CONNECTIONS is per process, as
+  # it is per dyno), and a subscriber on one sees edits made through the other only by way
+  # of the database. It starts once `odb` is healthy, so the migrations never run twice at
+  # once and its own Flyway pass finds nothing to do.
+  odb2:
+    extends:
+      service: odb
+    profiles: [odb-2]
+    depends_on:
+      odb:
+        condition: service_healthy
+
   # Background calculations (execution digests, workflow state). Without it the journey's
   # "calculated results appear" assertion — the ITC/obscalc liveness check — never passes.
   obscalc:
@@ -283,6 +298,9 @@ services:
     environment:
       GPP_TEST_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
       EXPLORE_ORIGIN: ${EXPLORE_ORIGIN:-explore-gemini-dev.web.app}
+      # The odb's upstreams, space-separated: `odb:8082`, or both web processes when
+      # ODB_WEB_DYNOS=2 (bootstrap sets it).
+      ODB_UPSTREAMS: ${ODB_UPSTREAMS:-odb:8082}
     ports:
       - "${CADDY_HTTPS_PORT:-443}:443"
       - "${CADDY_HTTP_PORT:-80}:80"

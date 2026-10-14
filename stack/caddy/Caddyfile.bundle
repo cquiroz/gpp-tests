@@ -37,7 +37,13 @@ sso.{$GPP_TEST_DOMAIN} {
 
 odb.{$GPP_TEST_DOMAIN} {
 	tls internal
-	reverse_proxy http://odb:8082
+	# One upstream, or two when ODB_WEB_DYNOS=2. Random choice per request, as Heroku's
+	# router spreads requests over dynos; a websocket stays on the process that accepted it.
+	# lb_try_duration retries a refused connection on another upstream, so the second process
+	# takes no traffic before it listens, as a dyno gets none before it binds its port.
+	reverse_proxy {$ODB_UPSTREAMS:odb:8082} {
+		lb_try_duration 5s
+	}
 }
 
 itc.{$GPP_TEST_DOMAIN} {

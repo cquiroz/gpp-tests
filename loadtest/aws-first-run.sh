@@ -650,12 +650,18 @@ pct() { printf '%sm' "$(( TARGET_MIB * $1 / 100 ))"; }
 # would be the container minus 1 GiB with -Xms = -Xmx, and resident memory would climb to the
 # limit over a long run as the JVM touches it all (2026-10-03: 4.6 → 15.5 GiB in 20 minutes),
 # leaving native memory 1 GiB to live in. See research/odb-memory-growth-handoff.md.
-ODB_HEAP_MIB=$(( TARGET_MIB * 24 / 100 ))
-LIMITS="ODB_MEM_LIMIT=$(pct 40) ODB_JAVA_OPTS='-Xms${ODB_HEAP_MIB}m -Xmx${ODB_HEAP_MIB}m' ITC_MEM_LIMIT=$(pct 10) OBSCALC_MEM_LIMIT=$(pct 8) \
+#
+# ODB_WEB_DYNOS=2 runs two odb web processes, as production runs two web dynos: each gets half
+# the share (20 % of the box, heap 12 %), so the pair costs what one did.
+ODB_WEB_DYNOS="${ODB_WEB_DYNOS:-1}"
+[[ "$ODB_WEB_DYNOS" =~ ^[12]$ ]] || die "ODB_WEB_DYNOS must be 1 or 2 (got '$ODB_WEB_DYNOS')"
+ODB_PCT=$(( 40 / ODB_WEB_DYNOS ))
+ODB_HEAP_MIB=$(( TARGET_MIB * 24 / 100 / ODB_WEB_DYNOS ))
+LIMITS="ODB_WEB_DYNOS=$ODB_WEB_DYNOS ODB_MEM_LIMIT=$(pct $ODB_PCT) ODB_JAVA_OPTS='-Xms${ODB_HEAP_MIB}m -Xmx${ODB_HEAP_MIB}m' ITC_MEM_LIMIT=$(pct 10) OBSCALC_MEM_LIMIT=$(pct 8) \
 CADDY_MEM_LIMIT=$(pct 8) PG_MEM_LIMIT=$(pct 6) SSO_MEM_LIMIT=$(pct 4) \
 HASURA_MEM_LIMIT=$(pct 2) PG_MAX_CONNECTIONS=400"
 say "memory limits for ${TARGET_MIB}MiB:"
-say "  odb $(pct 40) (heap ${ODB_HEAP_MIB}m)  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
+say "  odb $(pct $ODB_PCT) (heap ${ODB_HEAP_MIB}m)$([[ $ODB_WEB_DYNOS == 2 ]] && echo " × 2 web processes")  itc $(pct 10)  obscalc $(pct 8)  caddy $(pct 8)  postgres $(pct 6)  sso $(pct 4)  hasura $(pct 2)"
 note "  Caps rather than reservations. A target that only serves k6 does not need hasura at all"
 note "  (it is Explore's preferences service)."
 
@@ -852,6 +858,8 @@ ssh_to "$GEN_ID" "cd ~/gpp-tests && . out/grafana.env && $K6_ENV \
     # The odb's side of it, while the stack is up (the 2026-10-09 bisect steps died here on a
     # build whose subtitle edits answer 500, and nothing said why).
     SMOKE_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+    [[ $ODB_WEB_DYNOS == 2 ]] && ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb2-1 2>&1 | grep -v ' channel: Element('" \
+      > "out/odb2-log-smoke-aws-$SMOKE_STAMP.log" 2>/dev/null || true
     ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
       > "out/odb-log-smoke-aws-$SMOKE_STAMP.log" 2>/dev/null \
       && say "the odb's log is in out/odb-log-smoke-aws-$SMOKE_STAMP.log" || true
@@ -893,6 +901,8 @@ else
   # (2026-10-09: a red regression on the accumulated database stopped the run with nothing
   # to read).
   REG_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ $ODB_WEB_DYNOS == 2 ]] && ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb2-1 2>&1 | grep -v ' channel: Element('" \
+    > "out/odb2-log-regression-aws-$REG_STAMP.log" 2>/dev/null || true
   ssh_to "$TARGET_ID" "sudo docker logs --tail 3000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
     > "out/odb-log-regression-aws-$REG_STAMP.log" 2>/dev/null \
     && say "the odb's log is in out/odb-log-regression-aws-$REG_STAMP.log" || true
@@ -1202,8 +1212,10 @@ if [[ -n "$RAN_EXEC" ]]; then
   console.log("  graphql errors     :", m.odb_graphql_errors?.count ?? 0);
   try {
     const lines = fs.readFileSync("./out/odb-stats-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
-    const odb = lines.map((l) => l.split(";").find((c) => c.includes("odb-1")) ?? "").map((c) => c.trim().split(" ")[1]).filter(Boolean);
-    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    for (const name of ["odb-1", "odb2-1"]) {
+      const odb = lines.map((l) => l.split(";").find((c) => c.includes("-" + name)) ?? "").map((c) => c.trim().split(" ")[1]).filter(Boolean);
+      if (odb.length) console.log(("  " + name.replace("-1", "") + " memory").padEnd(21) + ":", "first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    }
   } catch (_e) { console.log("  odb memory         : no samples"); }
   ' || warn "could not summarise the execution run — the raw JSON is in out/"
   printf '\n'
@@ -1235,8 +1247,10 @@ if [[ -n "$RAN_SUBS" ]]; then
   console.log("  graphql errors     :", c("odb_graphql_errors"));
   try {
     const lines = fs.readFileSync("./out/odb-stats-subscribers-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
-    const odb = lines.map((l) => l.split(";").find((x) => x.includes("odb-1")) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
-    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    for (const name of ["odb-1", "odb2-1"]) {
+      const odb = lines.map((l) => l.split(";").find((x) => x.includes("-" + name)) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
+      if (odb.length) console.log(("  " + name.replace("-1", "") + " memory").padEnd(21) + ":", "first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    }
   } catch (_e) { console.log("  odb memory         : no samples"); }
   ' || warn "could not summarise the subscribers run — the raw JSON is in out/"
   printf '\n'
@@ -1254,6 +1268,8 @@ if [[ -n "$RAN_SURGE" ]]; then
   # The server side of the story, while the stack is still up: the odb's log without its
   # per-event channel chatter (what it refused, what it threw), and what Postgres was doing
   # (the 2026-10-08 run saturated it at ~12 cores with nothing in these files to say why).
+  [[ $ODB_WEB_DYNOS == 2 ]] && ssh_to "$TARGET_ID" "sudo docker logs --tail 20000 gpp-tests-odb2-1 2>&1 | grep -v ' channel: Element('" \
+    > "out/odb2-log-surge-aws-$STAMP.log" 2>/dev/null || true
   ssh_to "$TARGET_ID" "sudo docker logs --tail 20000 gpp-tests-odb-1 2>&1 | grep -v ' channel: Element('" \
     > "out/odb-log-surge-aws-$STAMP.log" 2>/dev/null \
     && say "saved out/odb-log-surge-aws-$STAMP.log ($(wc -l < "out/odb-log-surge-aws-$STAMP.log" | tr -d ' ') lines)" \
@@ -1261,7 +1277,10 @@ if [[ -n "$RAN_SURGE" ]]; then
   ssh_to "$TARGET_ID" "sudo docker exec gpp-tests-postgres-1 psql -U jimmy -d lucuma-odb -c \
     'select state, wait_event_type, count(*) from pg_stat_activity group by 1,2 order by 3 desc' -c \
     'select left(query, 160) as query, count(*) from pg_stat_activity where state = '\"'\"'active'\"'\"' group by 1 order by 2 desc limit 15' -c \
-    'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15'" \
+    'select relname, seq_scan, seq_tup_read, idx_scan, n_live_tup from pg_stat_user_tables order by seq_tup_read desc limit 15' -c \
+    'select client_addr, state, count(*) from pg_stat_activity where datname = '\"'\"'lucuma-odb'\"'\"' group by 1, 2 order by 1, 2'; \
+    echo; echo 'container addresses (for client_addr above):'; \
+    sudo docker ps --format '{{.Names}}' | xargs sudo docker inspect --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'" \
     > "out/pg-activity-surge-aws-$STAMP.txt" 2>/dev/null \
     && say "saved out/pg-activity-surge-aws-$STAMP.txt" || warn "could not read pg_stat_activity"
   printf '\n'
@@ -1280,8 +1299,10 @@ if [[ -n "$RAN_SURGE" ]]; then
   console.log("  http               :", c("http_reqs"), "requests · p95", p("http_req_duration", "p(95)"), "ms · checks", ((m.checks?.value ?? 0) * 100).toFixed(2) + "% · graphql errors", c("odb_graphql_errors"));
   try {
     const lines = fs.readFileSync("./out/odb-stats-surge-aws-'"$STAMP"'.log", "utf8").trim().split("\n");
-    const odb = lines.map((l) => l.split(";").find((x) => x.includes("odb-1")) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
-    if (odb.length) console.log("  odb memory         : first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    for (const name of ["odb-1", "odb2-1"]) {
+      const odb = lines.map((l) => l.split(";").find((x) => x.includes("-" + name)) ?? "").map((x) => x.trim().split(" ")[1]).filter(Boolean);
+      if (odb.length) console.log(("  " + name.replace("-1", "") + " memory").padEnd(21) + ":", "first", odb[0], "· last", odb[odb.length - 1], "· samples", odb.length);
+    }
   } catch (_e) { console.log("  odb memory         : no samples"); }
   ' || warn "could not summarise the surge run — the raw JSON is in out/"
   printf '\n'

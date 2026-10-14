@@ -61,6 +61,14 @@ check_obscalc() {
   compose ps --services --status running 2>/dev/null | grep -qx obscalc
 }
 
+# The second odb web process (ODB_WEB_DYNOS=2) is not reachable on its own through Caddy, so
+# its own healthcheck (the port is bound, migrations done) is the signal.
+check_odb2() {
+  local id
+  id="$(compose ps --quiet odb2 2>/dev/null)"
+  [[ -n "$id" && "$(docker inspect --format '{{.State.Health.Status}}' "$id" 2>/dev/null)" == healthy ]]
+}
+
 check_explore() {
   [[ "$(http_status "https://explore.$GPP_TEST_DOMAIN/")" == "200" ]]
 }
@@ -73,6 +81,7 @@ check_explore_conf() {
 }
 
 CHECKS=(check_sso check_odb check_itc check_obscalc check_hasura check_explore check_explore_conf)
+[[ "${ODB_WEB_DYNOS:-1}" == 2 ]] && CHECKS+=(check_odb2)
 # A space-delimited list rather than an associative array: stock /bin/bash on macOS is 3.2,
 # which has no `declare -A`, and this script is run locally as often as in CI.
 READY=" "

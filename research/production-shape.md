@@ -61,17 +61,26 @@ Short of that, an AWS surge with production's pool overrides
 `OBSCALC_MAX_CONNECTIONS=8`, `CALIBRATIONS_MAX_CONNECTIONS=4`), `PG_MAX_CONNECTIONS=40` and a
 CPU limit on Postgres would show which class breaks first.
 
-The stack takes those as of 2026-10-14. `aws-first-run.sh` forwards `ODB_MAX_CONNECTIONS`,
-`OBSCALC_MAX_CONNECTIONS`, `PG_CPUS` and `PG_MAX_CONNECTIONS` from the shell to the target,
-and compose passes the pools to the JVMs only when they are set. Pools first, because they
-are known:
+The stack takes those as of 2026-10-14, and runs the odb as two web processes like
+production's two dynos. `ODB_WEB_DYNOS=2` adds a second odb container (`odb2`, same image,
+its own JVM, heap and pool), Caddy picks one at random per request as Heroku's router does,
+and the wizard halves each process's memory share. `aws-first-run.sh` forwards
+`ODB_WEB_DYNOS`, `ODB_MAX_CONNECTIONS`, `OBSCALC_MAX_CONNECTIONS`, `PG_CPUS` and
+`PG_MAX_CONNECTIONS` from the shell to the target. Production's shape, pools first because
+they are known:
 
-    WIPE_DATA=1 ODB_MAX_CONNECTIONS=16 OBSCALC_MAX_CONNECTIONS=8 loadtest/aws-run.sh --surge realistic
+    WIPE_DATA=1 ODB_WEB_DYNOS=2 ODB_MAX_CONNECTIONS=8 OBSCALC_MAX_CONNECTIONS=8 \
+      loadtest/aws-run.sh --surge realistic
 
-Compare it with the unconstrained realistic run, `20261014T025023Z`.
-`pg-activity-surge-aws-<stamp>.txt` shows whether the pools held at 16 and 8. A Postgres CPU
-cap (`PG_CPUS=2`, say) is a guess until someone knows what an `essential-2` instance
-delivers, so it is a second run, not part of the first. `PG_MAX_CONNECTIONS=40` would
+Compare it with the unconstrained realistic run, `20261014T025023Z`. Two processes also test
+something the single container never could: an edit through one process reaching a subscriber
+on the other, through the database's notifications. Proven locally on 2026-10-14: 27 sockets
+split between the two processes, 0 lost events, 0 failed connects. Local latency numbers mean
+nothing there; that is the AWS run's job. `pg-activity-surge-aws-<stamp>.txt` lists the
+connections per container address, which shows whether the pools held at 8.
+
+A Postgres CPU cap (`PG_CPUS=2`, say) is a guess until someone knows what an `essential-2`
+instance delivers, so it is a second run, not part of the first. `PG_MAX_CONNECTIONS=40` would
 mis-model production here, because SSO and Hasura share this stack's Postgres but have their
 own databases in production. The pools are the binding limit (28 of the 40).
 
