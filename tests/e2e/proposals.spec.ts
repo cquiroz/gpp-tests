@@ -375,6 +375,18 @@ test("scenario 5: Explore's own Submit and Retract buttons drive the same lifecy
     expect(details.program.proposalStatus).toBe("SUBMITTED");
   });
 
+  // The proposal reference is the one reference only a submission mints, which is why its
+  // deep link lives here rather than in deep-links.spec.ts: `/G-2026A-0001` resolves through
+  // ProposalReferenceResolver.scala to this program's Proposal tab.
+  await test.step("the proposal reference in the URL opens this proposal", async () => {
+    const details = await odb.run<ProposalDetailsData>(proposalDetails({ programId }));
+    const reference = details.program.proposal?.reference?.label;
+    expect(reference, "the minted proposal reference").toMatch(/^G-\d{4}[AB]-\d{4}$/);
+    await page.goto(`/${reference}`);
+    await expect(page).toHaveURL(new RegExp(`/${programId}/proposal$`), { timeout: 120_000 });
+    await expect(ui.retractProposalButton(page)).toBeVisible({ timeout: 60_000 });
+  });
+
   await test.step("Retract: Submit is back, and the ODB says NOT_SUBMITTED", async () => {
     await expect(ui.retractProposalButton(page)).toBeEnabled();
     await ui.retractProposalButton(page).click();

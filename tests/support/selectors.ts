@@ -116,6 +116,27 @@ export const addTargetButton = (page: Page): Locator =>
 export const emptySiderealTargetItem = (page: Page): Locator =>
   page.getByTestId("explore-target-add-empty-sidereal");
 
+/* ── Top bar: role switch ───────────────────────────────────────────────────────────── */
+
+/**
+ * The role dropdown beside the user name (`RoleSwitch.scala`), rendered only when the JWT
+ * lists other roles — a single-role user has no dropdown at all, so its presence is itself
+ * the assertion that Explore read `otherRoles` from the token. It is a PrimeReact
+ * `FormDropdown` with a plain `id`, which PrimeReact puts on the dropdown's read-only
+ * `<input>`: its `value` is the current role's name ("PI", "Staff"), which is what
+ * {@link roleSwitchValue} reads. The input sits in a hidden-accessible wrapper, so clicks go
+ * to the dropdown's root (`data-pc-name="dropdown"`), the element that owns the pointer
+ * events; the options open in an overlay, addressed by role and the role's name.
+ */
+export const roleSwitch = (page: Page): Locator =>
+  page.locator('[data-pc-name="dropdown"]:has(#role-selector-switch)');
+
+export const roleSwitchValue = (page: Page): Locator => page.locator("#role-selector-switch");
+
+/** The toast Explore raises when a deep link names a reference the ODB cannot resolve. */
+export const unknownReferenceToast = (page: Page): Locator =>
+  page.getByText(/reference .* does not exist/i);
+
 /* ── Proposals (tests/COVERAGE.md "Proposals") ──────────────────────────────────────── */
 
 /**

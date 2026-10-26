@@ -6,20 +6,25 @@
 // 60/40 read/write.
 import { check, sleep } from "k6";
 import {
+  TEST_CALL,
   createObservation,
   createProgram,
   createTarget,
   gmosNorthLongSlit,
   observation as observationQuery,
+  observationByReference,
   observationCalculated,
   observationMode,
   observations as observationsQuery,
+  programByReference,
   programDetails,
   programs as programsQuery,
+  setProgramReference,
   targets as targetsQuery,
   updateObservationSubtitle,
 } from "../../lib/odb-operations.js";
 import { MODE_TARGETS, OBSERVING_MODES } from "../../lib/observing-modes.js";
+import { switchRole, userClaim } from "./auth.js";
 import { THINK_TIME_SECONDS } from "./config.js";
 import { PENDING, gql } from "./graphql.js";
 import { scenarioDuration, scenarioPass, tags } from "./metrics.js";
@@ -303,4 +308,77 @@ export function observingModesScenario(session, programId) {
     all = all && passed;
   }
   return all;
+}
+
+/**
+ * The GraphQL twin of tests/e2e/deep-links.spec.ts: staff give a program a reference, and
+ * the two lookups Explore's resolvers perform (`program(programReference:)`,
+ * `observation(observationReference:)`) find the program and its first observation by label.
+ * The lookups run as the owner, the way Explore would issue them for the PI browsing.
+ *
+ * @param {{token: string}} staff
+ * @param {{token: string}} owner
+ * @param {{programId: string, observationId: string}} ids
+ * @returns {boolean}
+ */
+export function resolveReferenceScenario(staff, owner, { programId, observationId }) {
+  const opts = { scenario: "resolve-reference" };
+  const minted = gql(staff, setProgramReference({ programId, semester: TEST_CALL.semester }), opts);
+  const programRef = minted && minted.setProgramReference.reference?.label;
+  // An engineering reference: minted on the spot, where a science one waits for an accepted
+  // proposal (see setProgramReference in lib/odb-operations.js).
+  if (!check(programRef, { "a program reference was minted": (r) => /^G-\d{4}[AB]-ENG-/.test(r || "") })) {
+    return false;
+  }
+
+  const byProgram = gql(owner, programByReference({ programReference: programRef }), opts);
+  const byObservation = gql(
+    owner,
+    observationByReference({ observationReference: `${programRef}-0001` }),
+    opts,
+  );
+  return check(
+    { byProgram, byObservation },
+    {
+      "the program reference resolves to the program": (r) =>
+        Boolean(r.byProgram) && r.byProgram.program?.id === programId,
+      "the observation reference resolves to the observation": (r) =>
+        Boolean(r.byObservation) &&
+        r.byObservation.observation?.id === observationId &&
+        r.byObservation.observation?.program.id === programId,
+    },
+  );
+}
+
+/**
+ * The GraphQL twin of tests/e2e/role-switch.spec.ts: the two-role persona starts as a PI and
+ * cannot see a program another PI owns; after SSO's `set-role` its JWT carries the staff
+ * role and the same program reads back. Returns the staff session, so a caller could carry
+ * on as staff; the persona's stored session stays on the pi role (set-role starts a new one).
+ *
+ * @param {{token: string, jar: any}} dual the persona, logged in on its pi role
+ * @param {string} staffRoleId the role to switch to
+ * @param {string} foreignProgramId a program the persona does not own
+ * @returns {boolean}
+ */
+export function roleSwitchScenario(dual, staffRoleId, foreignProgramId) {
+  const opts = { scenario: "role-switch" };
+  const before = userClaim(dual.token);
+  const asPi = gql(dual, programDetails({ programId: foreignProgramId }), opts);
+  const staff = switchRole(dual, staffRoleId, "role-switch");
+  const after = staff && userClaim(staff.token);
+  const asStaff = staff && gql(staff, programDetails({ programId: foreignProgramId }), opts);
+  return check(
+    { before, asPi, after, asStaff },
+    {
+      "starts on the pi role, with the staff role among the others": (r) =>
+        r.before.role.type === "pi" &&
+        (r.before.otherRoles || []).some((role) => role.id === staffRoleId),
+      "as a PI, another PI's program is out of sight": (r) => Boolean(r.asPi) && r.asPi.program === null,
+      "set-role answers with a JWT on the staff role": (r) =>
+        Boolean(r.after) && r.after.role.type === "staff" && r.after.role.id === staffRoleId && r.after.id === r.before.id,
+      "as staff, that same program reads back": (r) =>
+        Boolean(r.asStaff) && r.asStaff.program?.id === foreignProgramId,
+    },
+  );
 }

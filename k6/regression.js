@@ -20,6 +20,8 @@ import {
   editSubtitleScenario,
   observingModesScenario,
   readMixScenario,
+  resolveReferenceScenario,
+  roleSwitchScenario,
   scenario,
   scenarioAsync,
 } from "./lib/scenarios.js";
@@ -112,6 +114,28 @@ export default async function () {
       retractAndEdit(pi, proposal, label);
     }
   }
+
+  // The ODB half of two Explore mechanics the browser suite covers (deep-links.spec.ts and
+  // role-switch.spec.ts): staff mint a science reference on the guest's program and both
+  // labels resolve back to the ids; the two-role persona switches from pi to staff through
+  // SSO's set-role and the PI's program, out of sight before, reads back after.
+  scenario("resolve-reference", () =>
+    resolveReferenceScenario(staff, session, {
+      programId,
+      observationId: observation.observationId,
+    }),
+  );
+  const dual = loginAsStandardUser("TEST_DUAL");
+  if (!dual || !__ENV.TEST_DUAL_STAFF_ROLE_ID) {
+    fail(
+      "TEST_DUAL_REFRESH_TOKEN / TEST_DUAL_STAFF_ROLE_ID are not set: re-run " +
+        "stack/scripts/create-standard-users.sh (the two-role persona is new in 2026-10) and " +
+        "source the file it writes",
+    );
+  }
+  scenario("role-switch", () =>
+    Boolean(piProgramId) && roleSwitchScenario(dual, __ENV.TEST_DUAL_STAFF_ROLE_ID, piProgramId),
+  );
 
   // One executed step, Observe's way, as the service identity (ticket 021): keeps the
   // execution mutations and the execution-config read understood by the -dev odb, the way
