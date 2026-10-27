@@ -102,16 +102,32 @@ services:
     image: postgres:15
     mem_limit: ${PG_MEM_LIMIT:-2g}
     # A CPU cap for runs that stand in for a smaller database than the host (production's
-    # odb runs on a shared `essential-2` plan, research/production-shape.md §0). 0, the
+    # odb runs on a shared Essential plan, research/production-shape.md §0). 0, the
     # default, is no cap.
     cpus: ${PG_CPUS:-0}
     environment:
       POSTGRES_USER: ${PG_USER:-jimmy}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-banana}
       POSTGRES_DB: lucuma-odb
+      # See "Backend memory" below.
+      MALLOC_MMAP_THRESHOLD_: "131072"
+      MALLOC_TRIM_THRESHOLD_: "131072"
     # Flyway connects with sslmode=require, so SSL is not optional. The certificate is
     # generated per run and installed here with the ownership and mode Postgres demands —
     # done in the container so the host's file ownership (and platform) does not matter.
+    #
+    # Backend memory. On 2026-10-26 the Postgres cgroup hit its 2g limit four times at the
+    # start of plain e2e runs (the VM kernel's oom-kill lines say CONSTRAINT_MEMCG), on a
+    # 194 MB database. Measured during a passing run: the odb's pooled backends grow to
+    # 300–450 MB of anonymous memory each within two minutes and stay there while idle, so
+    # 17 of them fill the container. `pg_log_backend_memory_contexts` on the largest one
+    # accounts for ~160 MB (97 compiled PL/pgSQL trigger functions, the relcache and plan
+    # cache for the odb's generated statements); the rest is memory the backend freed and
+    # glibc kept. The two MALLOC_ variables below make glibc hand freed memory back: blocks
+    # of 128 KiB and up come from mmap and go back on free, and the heap top is trimmed past
+    # 128 KiB of slack. JIT was ruled out the same day (off made no difference) and stays at
+    # its default. Each kill takes every odb connection down with it and the odb does not
+    # reconnect: HTTP 500s until `docker restart` of odb and obscalc.
     entrypoint:
       - /bin/bash
       - -c
