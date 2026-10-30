@@ -153,8 +153,8 @@ inside `nl-vpc`), **018** (the surge profile is built and proven locally (2026-1
 `k6/surge.js`, `loadtest/aws-run.sh --surge`); both tiers pass every class on AWS, rerun on
 2026-10-14 with the subscriber-JWT fix (0 failed connects); what remains is the `surge`
 workflow running from CI, which waits on 016), **024** (telemetry stack, HITL).
-027 closed 2026-10-14: production's odb runs on an `essential-2` Postgres (shared, 40
-connections) with pools of 8/8/4, far below the AWS target. The surge PASS is about the
+027 closed 2026-10-14: production's odb runs on an entry-level shared Postgres
+with pools of 8/8/4, far below the AWS target. The surge PASS is about the
 software, and 026 now has the sizes to test production's. 021 and 022 closed 2026-10-03, 028 closed 2026-10-05,
 017 closed 2026-10-06, 023 closed 2026-10-07.
 

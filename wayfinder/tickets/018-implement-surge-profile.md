@@ -211,6 +211,35 @@ and `t_program_user` follow at a fifth or less. The next step is the query behin
 (`pg_stat_statements` on the target, or `EXPLAIN` on the exposure-time-mode reads) and whether
 an index or a join change removes them; it is an odb finding, not a test one.
 
+*Fixed upstream and measured (2026-10-14).* lucuma-odb PR #3195 (`aee0949cf`, migration
+`V1350__exposure_time_mode_observation_index.sql`) adds an index on
+`(c_observation_id, c_role)`. Until then, the only index starting with the observation was a
+partial unique one covering the requirement and acquisition roles. Lookups by observation alone,
+by the science role, or by a role bound as a parameter in a generic plan therefore scanned the
+whole table.
+
+Run 7 (`20261014T222029Z`) repeated run 6's command on the `-dev` build with the fix (odb
+`sha256:d893bbd1c367…`, obscalc `sha256:f3c6bda3efcc…`). It **passes every class**.
+`t_exposure_time_mode` is gone from the top 15 of `pg_stat_user_tables`: it read under
+1.3 million rows, against 33 billion before.
+
+| | Run 6 · `150159Z` · before | Run 7 · `222029Z` · with the index |
+|---|---|---|
+| Step overhead p95 / p99 | 473 / 610 ms | 360 / 406 ms |
+| Mutation p95 (execution) | 102 ms | 75 ms |
+| Submit p95 | 198 ms | 155 ms |
+| Event latency · round trip p95 | 132 · 18 ms | 93 · 13 ms |
+| HTTP p95 | 84 ms | 65 ms |
+| Postgres CPU median · max | 372 % · 647 % | 290 % · 535 % |
+| Postgres CPU, first → last 10 min of the plateau | 250 % → 436 % | 189 % → 327 % |
+
+With the pools still at 8 per process, the fix brings every latency back to about the
+unconstrained run's level. The climb is lower but still there, so it has more than one
+cause. The next tables on the list read billions of rows by sequential scan, all growing
+with the run: `t_observation` (6.4 billion), `t_program` (3.2 billion), `t_target`
+(2.5 billion) and `t_program_user` (2.4 billion). The same method applies: find the
+statements behind them with `pg_stat_statements` and check their plans.
+
 **Run 6, production's pools on two web processes (2026-10-14, `20261014T150159Z`).** Realistic
 tier, `ODB_WEB_DYNOS=2 ODB_MAX_CONNECTIONS=8 OBSCALC_MAX_CONNECTIONS=8`: **PASS on every
 class**, pools held at 8 per process, 751 sockets with 0 failed connects and 0 lost across the
