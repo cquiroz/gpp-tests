@@ -52,8 +52,8 @@ role, or CSS class.
 | Tab navigation | Overview, Proposal, Observations, Targets, Constraints, Scheduling tabs and their URL routes (`Page.scala`: 19 pages) | e2e | partial (journey lands on Observations) | 2 | ids for the tab buttons; the URL shapes are stable and assertable now |
 | Deep links and reference resolvers | `/G-2026A-0001`, `/G-2026A-0001-Q`, `/G-2026A-0001-Q-0001` resolve to the proposal, program or observation page; unknown labels toast and fall back | both | covered (`deep-links.spec.ts`; the proposal reference in `proposals.spec.ts` scenario 5; k6 `resolve-reference`) | 3 | — |
 | Recent programs | "Recent Progs" submenu of the toolbar menu, from local prefs | e2e | none | 1 | ids |
-| Keyboard shortcuts | `o/t/r/n/s` switch tabs, `j/k` move in the obs tree, `y`/`mod+c` copy and `p`/`mod+v` paste observations, `F1`/`?` opens the shortcuts help, `w` cycles wavelength units (`shortcuts.scala`) | e2e | none | 1 | — (keyboard input is native to Playwright; assert via URL or tree) |
-| Getting Started guide | Help panel toggled from the toolbar and from User Preferences | e2e | none | 1 | `explore-guide-button` ships |
+| Keyboard shortcuts | `o/t/r/n/s` switch tabs, `j/k` move in the obs tree, `y`/`mod+c` copy and `p`/`mod+v` paste observations, `F1`/`?` opens the shortcuts help, `w` cycles wavelength units (`shortcuts.scala`) | e2e | covered (`keyboard-shortcuts.spec.ts`: tabs, `j`/`k`/`s`, `y`/`p` with the clone read back, `w` with Hasura read-back, F1) | 3 | — . Upstream bug: `?` is dead, react-hotkeys-hook 5 matches on the key code so `shift+?` never fires and the `shift+slash` twin is registered but unhandled (`ExploreLayout.scala`) |
+| Getting Started guide | Help panel toggled from the toolbar and from User Preferences | e2e | covered (`getting-started.spec.ts`; the guide text is fetched from GitHub, so `net`) | 3 | — |
 | About, User Manual, Help Desk, Feedback | External links in the menu | e2e | none, low value | 1 | ids |
 | PWA update toast | Service-worker "new version" prompt (`ExplorePWA.scala`) | — | not testable in the stack (needs two builds) | 1 | skip |
 | Log level menu | Staff-only Info/Debug/Trace | — | skip | 1 | — |
@@ -84,7 +84,7 @@ role, or CSS class.
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
 | Create observation | "Obs" button; also "Grp" and "Add a new Daytime Calibration" (`explore-obs-tree-add-daytime-cal`) | both | covered (obs only) | 2 | ids for Grp (daytime cal has one) |
-| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | none | 1 | ids on the badge buttons (ticket 032 items 2–6 are the subtitle set; the clone/delete buttons need a sibling ask) |
+| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | partial (the clone itself, through the `p` shortcut in `keyboard-shortcuts.spec.ts`; the badge button not yet) | 2 | ids on the badge buttons (ticket 032 items 2–6 are the subtitle set; the clone/delete buttons need a sibling ask) |
 | Delete and undelete | Badge delete; multi-select delete with the "Observations delete" confirm dialog; undo restores | both | none | 1 | ids |
 | Subtitle edit | Badge "Add description" / pencil / inline input | both | written, skipped (journey scenario 4) | 1 | ids (ticket 032) |
 | Science band | Popup menu on the badge sets the band from the program's allocations | both | none | 1 | ids; needs a time award first (staff) |
@@ -94,7 +94,7 @@ role, or CSS class.
 | Blind offset indicator | Badge icon when a blind offset is set | e2e | none | 1 | ids |
 | Groups | Create AND/OR groups, name, ordered, same-night, min/max delay, min required, planned/min/max time (`GroupEditBody`); nest and reorder | both | none | 1 | ids; the GraphQL side is plain and could land in k6 first |
 | Drag and drop in the tree | Move observations into groups and reorder (`ObsTree`, `ViewCommon`) | e2e | none | 1 | ids + Playwright `dragTo`; react-beautiful-dnd needs the keyboard path or mouse steps |
-| Copy / paste observations | `y`/`p` across the tree, and into asterism, constraint set or scheduling group views (`actions/*PasteInto*`) | e2e | none | 1 | ids |
+| Copy / paste observations | `y`/`p` across the tree, and into asterism, constraint set or scheduling group views (`actions/*PasteInto*`) | e2e | partial (`y`/`p` across the tree; the paste-into views not yet) | 2 | ids for the paste-into views |
 | Multi-select | Shift/ctrl click selects an `ObsIdSet`; the Targets/Constraints/Scheduling tabs then edit the set at once | e2e | none | 1 | ids |
 | Observations Summary | Table view of all observations with column selector, sticky columns, filters (`ObsSummaryTile`) | e2e | none | 1 | ids on rows (`data-obs-id` pattern, as with programs) |
 | Group warnings | Overview tile listing group-level problems | e2e | none | 1 | ids |
@@ -168,8 +168,8 @@ role, or CSS class.
 | Tile open/closed state | Minimize tiles; persisted | e2e | none | 1 | — |
 | Table column visibility and sort | Persisted per `TableId` | e2e | none | 1 | — |
 | Aladin preferences | FOV, overlays, survey; persisted | e2e | none | 1 | ids |
-| Global preferences | Wavelength units, elevation plot options, theme | e2e | none | 1 | ids |
-| User Preferences dialog | API keys (create with role, delete), clean local cache, show/hide Getting Started | e2e | none | 1 | ids; API-key creation is also a `gql` candidate, since the key is an SSO mutation the suite does not exercise yet |
+| Global preferences | Wavelength units, elevation plot options, theme | e2e | partial (wavelength units, via `w`, read back from Hasura after a reload) | 2 | ids |
+| User Preferences dialog | API keys (create with role, delete), clean local cache, show/hide Getting Started | e2e | partial (show/hide Getting Started, persisted) | 2 | ids; API-key creation is also a `gql` candidate, since the key is an SSO mutation the suite does not exercise yet |
 
 ## 9. Live updates
 

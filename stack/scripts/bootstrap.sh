@@ -227,6 +227,7 @@ log "starting odb, itc, obscalc, hasura and the object store (odb web processes:
 compose up --detach
 
 bash "$STACK_DIR/scripts/wait-for-ready.sh"
+bash "$STACK_DIR/scripts/prefs-fixups.sh"
 bash "$STACK_DIR/scripts/record-images.sh" "$REPO_DIR/out/images.json"
 
 # Standard test users (tiers 2-3 of research/orcid-auth-testing-strategy.md). Without them
