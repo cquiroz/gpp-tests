@@ -14,6 +14,8 @@ reorder from real usage knowledge.
 | Area | What it includes | Status | Where | Priority |
 |---|---|---|---|---|
 | Session & login | Guest login, injected standard sessions (pi/staff), logged-in shell renders | covered | `journey.spec.ts`, `journey-pi.spec.ts`, `journey-staff.spec.ts`, `standard-user.spec.ts` | P0 |
+| Role switch | The top-bar role dropdown for a user holding two SSO roles: `set-role` rotates the session, and what the user can see changes | covered (pi → staff; another PI's program out of sight, then listed, in the dialog and by read-back through the rotated cookie) | `role-switch.spec.ts`; k6 `role-switch`. Needs the `TEST_DUAL` persona from `create-standard-users.sh` | P1 |
+| Deep links | A reference label in the URL opens the page it names: program, observation, proposal; unknown labels toast and fall back | covered (program and observation references, minted as an engineering program because the ODB formats a science reference only for an accepted proposal; the proposal reference as a step of `proposals.spec.ts` scenario 5) | `deep-links.spec.ts`, `proposals.spec.ts`; k6 `resolve-reference` | P1 |
 | Program management | Create, select, list in Proposals & Programs dialog | covered | `journey.spec.ts` scenario 2 | P0 |
 | Program details | Name/subtitle edits, notes, program-level views | none (the subtitle edit is written but skipped) | `journey.spec.ts` scenario 4 — skipped pending the obs-badge testids, wayfinder ticket 032 | P1 |
 | Observations: lifecycle | Create, clone, delete, activate/deactivate | partial (create only) | `journey.spec.ts` scenario 3 | P0 |

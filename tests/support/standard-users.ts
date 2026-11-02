@@ -20,7 +20,14 @@ export interface StandardUser {
   roleId: string;
   refreshToken: string;
   cookieDomain: string;
+  /**
+   * The staff role of the two-role persona (`TEST_DUAL`): the role its session is *not* on,
+   * which the role-switch scenario asks SSO to switch to. Absent on single-role personas.
+   */
+  staffRoleId?: string;
 }
+
+export type StandardUserPrefix = "TEST_PI" | "TEST_STAFF" | "TEST_DUAL";
 
 const ENV_FILE = fileURLToPath(
   new URL("../../stack/.env.standard-users", import.meta.url),
@@ -42,21 +49,22 @@ function fileVars(): Record<string, string> {
 }
 
 /**
- * The fabricated user for a prefix (`TEST_PI`, `TEST_STAFF`), from the environment if the
- * caller sourced the file, else from the file itself — so `npx playwright test` works in a
- * fresh shell. Undefined (caller should skip) when the script has not been run.
+ * The fabricated user for a prefix (`TEST_PI`, `TEST_STAFF`, `TEST_DUAL`), from the
+ * environment if the caller sourced the file, else from the file itself — so `npx playwright
+ * test` works in a fresh shell. Undefined (caller should skip) when the script has not been
+ * run, or — for `TEST_DUAL` — when it predates the persona.
  */
-export function loadStandardUser(
-  prefix: "TEST_PI" | "TEST_STAFF",
-): StandardUser | undefined {
+export function loadStandardUser(prefix: StandardUserPrefix): StandardUser | undefined {
   const vars = { ...fileVars(), ...process.env };
   const userId = vars[`${prefix}_USER_ID`];
   const roleId = vars[`${prefix}_ROLE_ID`];
   const refreshToken = vars[`${prefix}_REFRESH_TOKEN`];
+  const staffRoleId = vars[`${prefix}_STAFF_ROLE_ID`];
   const cookieDomain =
     vars.SSO_COOKIE_DOMAIN ?? vars.GPP_TEST_DOMAIN ?? "gpp-test.internal";
   if (!userId || !roleId || !refreshToken) return undefined;
-  return { userId, roleId, refreshToken, cookieDomain };
+  if (prefix === "TEST_DUAL" && !staffRoleId) return undefined;
+  return { userId, roleId, refreshToken, cookieDomain, staffRoleId };
 }
 
 /** JWT payload fields the assertions care about. */
@@ -64,7 +72,8 @@ export interface StandardClaims {
   "lucuma-user": {
     id: string;
     type: string;
-    role: { type: string };
+    role: { type: string; id: string };
+    otherRoles?: { type: string; id: string }[];
     givenName?: string;
     familyName?: string;
   };
@@ -78,15 +87,19 @@ export interface StandardClaims {
 export class StandardSession {
   private token: string | undefined;
   private issuedAt = 0;
+  /** The session cookie in force: the fabricated one until the browser rotates it. */
+  private refreshToken: string;
 
-  constructor(readonly user: StandardUser) {}
+  constructor(readonly user: StandardUser) {
+    this.refreshToken = user.refreshToken;
+  }
 
   /** Call before the first navigation; the leading dot sends the cookie to every stack host. */
   async inject(context: BrowserContext): Promise<void> {
     await context.addCookies([
       {
         name: "lucuma-refresh-token",
-        value: this.user.refreshToken,
+        value: this.refreshToken,
         domain: `.${this.user.cookieDomain}`,
         path: "/",
         secure: true,
@@ -97,6 +110,22 @@ export class StandardSession {
     ]);
   }
 
+  /**
+   * Re-reads the session cookie from the browser, for after an action that makes SSO replace
+   * it — a role switch starts a new session on the other role (`Routes.scala`, `set-role`:
+   * `res.addCookie(coo)`). From here on the API side refreshes through the browser's current
+   * session, so its read-backs run as whatever the browser has become. Returns the cookie
+   * value, so a caller can assert it actually changed.
+   */
+  async adoptBrowserCookie(context: BrowserContext): Promise<string> {
+    const cookie = (await context.cookies()).find((c) => c.name === "lucuma-refresh-token");
+    if (!cookie) throw new Error("the browser context holds no lucuma-refresh-token cookie");
+    this.refreshToken = cookie.value;
+    this.token = undefined;
+    this.issuedAt = 0;
+    return cookie.value;
+  }
+
   /** A JWT with life left in it, minted through the session's refresh token. */
   async jwt(): Promise<string> {
     const ageSeconds = (Date.now() - this.issuedAt) / 1000;
@@ -104,7 +133,7 @@ export class StandardSession {
 
     const response = await fetch(endpoints.ssoRefreshUrl, {
       method: "POST",
-      headers: { cookie: `lucuma-refresh-token=${this.user.refreshToken}` },
+      headers: { cookie: `lucuma-refresh-token=${this.refreshToken}` },
     });
     if (!response.ok) {
       throw new Error(

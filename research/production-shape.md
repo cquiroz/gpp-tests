@@ -4,62 +4,57 @@
 
 **Summary.** Production is four Heroku apps — `lucuma-postgres-odb-production` (process types `web`, `obscalc`, `calibration`, one shared Heroku Postgres), `lucuma-sso-production` (`web` + its own Heroku Postgres), `itc-production` (`web` + a Redis Cloud add-on, no database), and `lucuma-resource-production` (`web`) — plus a Hasura prefs service, also Heroku-routed at `prefs.gpp.gemini.edu`. The ODB and ITC apps were **verified live** on their bare `herokuapp.com` domains; Explore's production config points straight at `lucuma-postgres-odb-production.herokuapp.com`, so that name is load-bearing in production today. There is **no app.json, Procfile, or heroku.yml anywhere in the repos**: formation is configured only in the Heroku dashboard/API, and the promotion script (`promote.sh` in lucuma-apps) only PATCHes each formation's `docker_image` — it never touches size or quantity. No autoscaling automation exists in any gemini-hlsw repo. Consequence for the capacity claim: **the load target cannot be sized from public sources alone**; one `heroku ps`/`pg:info` run by anyone with access to the Gemini Heroku team closes every remaining gap (exact commands below).
 
-**Read from Heroku on 2026-10-14 (ticket 027):** §0 below holds the values. It replaces every
-"unknown" in §1, which is kept as the 2026-09-02 record.
+**Read from Heroku on 2026-10-14 (ticket 027):** §0 below holds the shape, and the gitignored
+read holds the exact values. It replaces every "unknown" in §1, which is kept as the
+2026-09-02 record.
 
 ---
 
 ## 0. Production as read on 2026-10-14
 
-Source: `tools/read-production-sizing.sh`, run by Carlos with a Heroku login on the
-`gemini-hlsw` team. The output is `out/production-sizing-20261014T125312Z.txt` (gitignored).
-All four apps run in the **Common Runtime** (no Private Space), region `us`, container stack.
+Source: `tools/read-production-sizing.sh`, run by Carlos with a Heroku login on the team that
+owns production. The exact values (dyno types, database plans and versions, connection counts,
+add-on plans) are in `out/production-sizing-20261014T125312Z.txt`, which is gitignored on
+purpose. This repository is public, so this section keeps only the shape the tests need.
+Anyone with access re-reads the exact values by running the script.
 
-| App | Process type | Dyno × count | Database / add-ons | Pool override |
-|---|---|---|---|---|
-| `lucuma-postgres-odb-production` | `web` | **Performance-L-RAM × 2** (30 GB, dedicated, each) | **Heroku Postgres `essential-2`**: PG 15.18, **40 connections** (26 in use at the read), 275 MB of 32 GB | `ODB_MAX_CONNECTIONS=8` per dyno |
-| | `obscalc` | **Standard-2X × 1** (1 GB, shared CPU) | same database | `OBSCALC_MAX_CONNECTIONS=8` |
-| | `calibration` | Standard-2X × 1 | same database | `CALIBRATIONS_MAX_CONNECTIONS=4` |
-| | `pdfsummary` | Standard-2X × 1, a fourth process type, new since 2026-09 | same database | none set |
-| | | | Cloudcube `hobby`, Mailgun `concept50k`, Papertrail (shared, billed to the dev app) | |
-| `lucuma-sso-production` | `web` | Standard-2X × 1 | Heroku Postgres `essential-1`: PG 15.18, 20 connections (2 in use), 9 MB | — |
-| `itc-production` | `web` | **Performance-M × 1** (2.5 GB, dedicated) | Redis Cloud plan `100` (100 MB), no Postgres | — |
-| `lucuma-resource-production` | `web` | Basic × 1 | Heroku Postgres `essential-0`: PG 17.10, 20 connections, 9 MB | — |
-| `user-prefs-production` (Hasura) | not read | | | |
-
-**Autoscaling:** not determined. The Platform API's autoscaling monitors endpoint answered
-nothing readable for any process type. At the read, every formation ran at its configured
-quantity, `web` at 2. The prefs app is `user-prefs-production`; a rerun with
-`PREFS_APP=user-prefs-production` reads it.
+- **The odb app** runs **two `web` dynos**, each with dedicated CPU and more memory than the
+  test target gives one odb container. `obscalc`, `calibration` and a newer `pdfsummary` run
+  as one small shared-CPU dyno each.
+- **They all share one Heroku Postgres** on an entry-level **Essential** plan: shared,
+  multi-tenant hardware, a connection limit in the tens, and no follower.
+- **Pool overrides** cap each process's connections: `ODB_MAX_CONNECTIONS=8` per web dyno,
+  `OBSCALC_MAX_CONNECTIONS=8`, `CALIBRATIONS_MAX_CONNECTIONS=4`. `pdfsummary` sets none.
+- **SSO, the ITC and the resource service** are single-dyno apps. SSO and the resource
+  service have their own small Essential databases; the ITC has a Redis add-on.
+- **All of it runs in the Common Runtime** (no Private Space).
+- **Not determined:** autoscaling (its API answered nothing readable; every formation ran at
+  its configured quantity) and the Hasura prefs app, which a rerun with `PREFS_APP` set reads.
 
 **What it means for the capacity claim.** The AWS surge passes on hardware much larger than
 production's where it matters most, which is the database:
 
-- **The odb's Postgres is an Essential plan.** Essential databases run on shared,
-  multi-tenant hardware, with no dedicated CPU or RAM, a 40-connection cap and no follower.
-  On the AWS target, the same database ran a 16-core host's Postgres with a 3.8 GiB memory
-  limit and `max_connections=400`. Through both surge tiers it used 3.4–3.7 cores at the
-  median and up to 7 cores. Nothing says an Essential-2 instance can supply that.
-- **Production starves the connection pools on purpose; the test target does not.** In
-  production, the odb gets 8 connections per web dyno (16 across both), obscalc 8 and
-  calibrations 4. That makes 28 of the 40, plus `pdfsummary` with the default pool and no
-  override. The test stack sets no override, so each JVM takes the default
-  `2 × cores + 1` = 33 on the 16-core target. Under the surge's ~300–430 concurrent VUs, a
-  pool of 8 per dyno queues requests that the target served at once.
-- **obscalc is a Standard-2X: 1 GB and a CPU share.** On the target, obscalc ran at
-  1.4–1.7 cores median, held ~3 GiB, and burst to 600–685 % during the post-#3145 recompute
+- **The odb's Postgres is an Essential plan,** with no dedicated CPU or RAM. On the AWS
+  target, the same database ran a 16-core host's Postgres with a 3.8 GiB memory limit and
+  `max_connections=400`. Through both surge tiers it used 3.4–3.7 cores at the median and up
+  to 7 cores. Nothing says an Essential instance can supply that.
+- **Production limits the connection pools on purpose; the unconstrained target does not.**
+  Production's overrides add up to most of the database's limit. The test stack sets no
+  override by default, so each JVM takes the default `2 × cores + 1` = 33 on the 16-core
+  target. Under the surge's ~300–430 concurrent VUs, a pool of 8 per dyno queues requests
+  that the target served at once.
+- **obscalc runs on a small shared-CPU dyno.** On the target, obscalc ran at 1.4–1.7 cores
+  median, held ~3 GiB, and burst to 600–685 % during the post-#3145 recompute
   (`research/odb-ask-smart-gcal-full-scans.md`). Production's recompute after that kind of
   upgrade will take far longer than the three minutes measured.
-- **The web dynos are the one place production is bigger.** Two Performance-L-RAM dynos are
-  60 GB of dedicated memory, against the target's one odb container with a ~15.7 GiB heap.
+- **The web dynos are the one place production is bigger** than one odb container with a
+  ~15.7 GiB heap.
 
 So the surge PASS is a claim about the **software** under the deadline shape: no query or
 code path breaks at that load when resources are plentiful. It is not yet a claim about
 **production's sizing**. Ticket 026, the production-shaped target, now has its numbers.
-Short of that, an AWS surge with production's pool overrides
-(`ODB_MAX_CONNECTIONS=16` for the one odb container standing in for two dynos,
-`OBSCALC_MAX_CONNECTIONS=8`, `CALIBRATIONS_MAX_CONNECTIONS=4`), `PG_MAX_CONNECTIONS=40` and a
-CPU limit on Postgres would show which class breaks first.
+Short of that, an AWS surge with production's pool overrides and a CPU limit on Postgres
+would show which class breaks first.
 
 The stack takes those as of 2026-10-14, and runs the odb as two web processes like
 production's two dynos. `ODB_WEB_DYNOS=2` adds a second odb container (`odb2`, same image,
@@ -79,15 +74,15 @@ split between the two processes, 0 lost events, 0 failed connects. Local latency
 nothing there; that is the AWS run's job. `pg-activity-surge-aws-<stamp>.txt` lists the
 connections per container address, which shows whether the pools held at 8.
 
-A Postgres CPU cap (`PG_CPUS=2`, say) is a guess until someone knows what an `essential-2`
-instance delivers, so it is a second run, not part of the first. `PG_MAX_CONNECTIONS=40` would
-mis-model production here, because SSO and Hasura share this stack's Postgres but have their
-own databases in production. The pools are the binding limit (28 of the 40).
+A Postgres CPU cap (`PG_CPUS=2`, say) is a guess until someone knows what an Essential
+instance delivers, so it is a second run, not part of the first. Setting `PG_MAX_CONNECTIONS`
+to production's limit would mis-model production here, because SSO and Hasura share this
+stack's Postgres but have their own databases in production. The pools are the binding limit.
 
 **Run on 2026-10-14 (`20261014T150159Z`, realistic tier): PASS on every class.** Same images
 and generator as the unconstrained run. The pools held: at collect time Postgres showed exactly
-8 connections from each of odb, odb2 and obscalc (24, against 26 in use on production's
-`essential-2` at the read).
+8 connections from each of odb, odb2 and obscalc, close to what production had in use at
+the read.
 
 | | Unconstrained · `025023Z` | Production pools, 2 processes · `150159Z` |
 |---|---|---|
@@ -106,7 +101,7 @@ delivery across the two processes lost nothing at full population. Neither odb l
 warning or an error.
 
 What this does not cover is Postgres itself: it still had the box's cores and used up to
-6.5 of them. Production's `essential-2` is shared hardware with a CPU share nobody has
+6.5 of them. Production's Essential database is shared hardware with a CPU share nobody has
 measured, so a `PG_CPUS` run is the remaining step toward production's shape, and the
 Postgres CPU climb (ticket 018, now traced to sequential scans of `t_exposure_time_mode`)
 is the thing most likely to break first under a cap.

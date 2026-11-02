@@ -111,7 +111,7 @@ export function standardIdentity(
  * what made the [pi] journey fail every first attempt in CI: a freshly fabricated PI owns no
  * programs, so Explore auto-created one and routed to it instead of ever showing the popup.
  */
-async function openProgramsDialog(page: Page): Promise<void> {
+export async function openProgramsDialog(page: Page): Promise<void> {
   await expect(ui.loggedInLanding(page)).toBeVisible({ timeout: 120_000 });
   if (!(await ui.programsDialog(page).isVisible())) {
     await ui.mainMenuButton(page).click();

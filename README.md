@@ -59,8 +59,14 @@ npm run verify:operations          # is the live ODB still the schema we compile
 npm run e2e                        # the four v1 scenarios
 source stack/.env.standard-users   # the fabricated PI, for the observing-modes scenario
 npm run k6:regression              # the same scenarios at the GraphQL layer
+npm run stack:refresh              # days later: today's odb/obscalc/ITC/SSO images, data kept
 npm run stack:down                 # or CLEAN=1 ... to delete generated keys and caches too
 ```
+
+Explore is proxied live from lucuma-apps main, so a stack left up for a few days ends with
+Explore's schema ahead of the odb's: "Schema error, reload to check for a new version" at the
+foot of every page and red runs. `npm run stack:refresh` pulls the day's `-dev` images and
+recreates only the services whose image changed, keeping the database and the fabricated users.
 
 `npm run stack:up` is idempotent and prints every URL it brings up. It needs one `sudo` to add
 six hostnames to `/etc/hosts` (`SKIP_HOSTS=1` to skip; `stack/scripts/hosts.sh` adds any that

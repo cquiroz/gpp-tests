@@ -19,6 +19,7 @@
     "e2e:headed": "playwright test --headed",
     "stack:up": "stack/scripts/bootstrap.sh",
     "stack:down": "stack/scripts/down.sh",
+    "stack:refresh": "stack/scripts/refresh.sh",
     "verify:operations": "node tools/verify-operations.js",
     "thresholds": "node tools/compute-thresholds.js",
     "summary": "node tools/write-run-summary.js",

@@ -13,7 +13,8 @@
 # Idempotent: users, roles and sessions are looked up before being created, so re-running
 # only re-mints the JWTs (they expire after an hour; sessions and users live with the stack).
 #
-# Two personas for the browser suite (TEST_PI, TEST_STAFF), then the pool for k6 (ticket 017):
+# Three personas for the browser suite (TEST_PI, TEST_STAFF, and TEST_DUAL holding both
+# roles for the role-switch scenario), then the pool for k6 (ticket 017):
 # POOL_PI_COUNT PIs and POOL_STAFF_COUNT staff written as JSON to
 # stack/.env.standard-users.json, one identity per load VU (POOL_PI_COUNT=0 skips it).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -26,6 +27,10 @@ load_generated_env
 # here. Verified digits; recompute per the algorithm in the research note if adding personas.
 readonly PI_ORCID="0000-0002-1825-0097"
 readonly STAFF_ORCID="0000-0002-1825-010X"
+# A third persona holding *two* roles (pi and staff) for the role-switch scenario: Explore
+# renders its role dropdown only when the JWT lists other roles, and SSO's set-role refuses a
+# role the user does not own. The session is on the pi role, so the browser starts as a PI.
+readonly DUAL_ORCID="0000-0002-1825-0118"
 
 sso_psql() {
   compose exec -T postgres psql -qtAX -U "${PG_USER:-jimmy}" -d lucuma-sso -v ON_ERROR_STOP=1 -c "$1"
@@ -103,9 +108,15 @@ STAFF_USER_ID="$(ensure_user "$STAFF_ORCID" Test Staff)"
 STAFF_ROLE_ID="$(ensure_role "$STAFF_USER_ID" staff)"
 STAFF_REFRESH_TOKEN="$(ensure_session "$STAFF_USER_ID" "$STAFF_ROLE_ID")"
 
+DUAL_USER_ID="$(ensure_user "$DUAL_ORCID" Test Dual)"
+DUAL_ROLE_ID="$(ensure_role "$DUAL_USER_ID" pi)"
+DUAL_STAFF_ROLE_ID="$(ensure_role "$DUAL_USER_ID" staff)"
+DUAL_REFRESH_TOKEN="$(ensure_session "$DUAL_USER_ID" "$DUAL_ROLE_ID")"
+
 log "minting 1-hour JWTs (re-run this script when they expire; everything else persists)"
 PI_JWT="$(mint_jwt "$PI_ROLE_ID")"
 STAFF_JWT="$(mint_jwt "$STAFF_ROLE_ID")"
+DUAL_JWT="$(mint_jwt "$DUAL_ROLE_ID")"
 
 # A separate file, not an append to .env.generated: bootstrap rewrites that file wholesale,
 # and this one is re-runnable on its own. Both are gitignored by the same stack/.env* glob.
@@ -121,6 +132,13 @@ export TEST_STAFF_USER_ID="$STAFF_USER_ID"
 export TEST_STAFF_ROLE_ID="$STAFF_ROLE_ID"
 export TEST_STAFF_REFRESH_TOKEN="$STAFF_REFRESH_TOKEN"
 export TEST_STAFF_JWT="$STAFF_JWT"
+# One user, two roles: the session (and so the cookie and the JWT) is on the pi role, and
+# TEST_DUAL_STAFF_ROLE_ID is the role the role-switch scenario asks SSO to switch to.
+export TEST_DUAL_USER_ID="$DUAL_USER_ID"
+export TEST_DUAL_ROLE_ID="$DUAL_ROLE_ID"
+export TEST_DUAL_STAFF_ROLE_ID="$DUAL_STAFF_ROLE_ID"
+export TEST_DUAL_REFRESH_TOKEN="$DUAL_REFRESH_TOKEN"
+export TEST_DUAL_JWT="$DUAL_JWT"
 # Browser tests inject the refresh token as a cookie on this domain (name:
 # lucuma-refresh-token, path /, Secure, HttpOnly, SameSite=Strict).
 export SSO_COOKIE_DOMAIN="$GPP_TEST_DOMAIN"
@@ -129,6 +147,7 @@ EOF
 log "wrote $STANDARD_USERS_ENV"
 log "pi:    $PI_USER_ID / $PI_ROLE_ID"
 log "staff: $STAFF_USER_ID / $STAFF_ROLE_ID"
+log "dual:  $DUAL_USER_ID / pi $DUAL_ROLE_ID, staff $DUAL_STAFF_ROLE_ID"
 
 # ---------------------------------------------------------------------------------------
 # The standard-user pool (ticket 017): POOL_PI_COUNT PIs and POOL_STAFF_COUNT staff, one per

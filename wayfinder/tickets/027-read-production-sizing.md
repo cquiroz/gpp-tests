@@ -29,16 +29,16 @@ was stale (401), so a human runs this one. Tested only against stubs so far.
 
 **Closed 2026-10-14.** Carlos ran `tools/read-production-sizing.sh`
 (`out/production-sizing-20261014T125312Z.txt`), and the values are in
-`research/production-shape.md` §0. In brief:
+`research/production-shape.md` §0. The exact values stay in the gitignored output because
+this repository is public. In brief:
 
-- odb `web`: Performance-L-RAM × 2. `obscalc`, `calibration` and a new `pdfsummary`:
-  Standard-2X × 1 each.
-- One Heroku Postgres **`essential-2`** shared by all of them: 40 connections, 26 in use at
-  the read.
+- The odb runs two dedicated `web` dynos; `obscalc`, `calibration` and a new `pdfsummary` run
+  one small shared-CPU dyno each.
+- All of them share one Heroku Postgres on an entry-level Essential plan, with a connection
+  limit in the tens.
 - Pool overrides: `ODB_MAX_CONNECTIONS=8`, `OBSCALC_MAX_CONNECTIONS=8`,
   `CALIBRATIONS_MAX_CONNECTIONS=4`.
-- SSO: Standard-2X on `essential-1`. ITC: Performance-M with Redis Cloud `100`. Resource:
-  Basic on `essential-0`.
+- SSO, the ITC and the resource service are single-dyno apps.
 - Common Runtime throughout.
 
 Not determined: autoscaling (its API answered nothing readable) and the prefs app

@@ -15,6 +15,7 @@
 // pool arrives as a file (`standard-users.js`).
 import http from "k6/http";
 import { fail, sleep } from "k6";
+import { b64decode } from "k6/encoding";
 import { endpoints } from "./config.js";
 import { tags } from "./metrics.js";
 
@@ -159,11 +160,42 @@ export function loginWithRefreshToken(refreshToken, label) {
 }
 
 /**
- * Log in as one of the two browser personas (`stack/scripts/create-standard-users.sh`), whose
+ * Switch a standard user's session to another of its roles, the way Explore's top-bar
+ * dropdown does (`SSOClient.switchRole`): SSO's `set-role` starts a new session on that role,
+ * replaces the session cookie — the jar picks the new one up — and answers with a JWT for
+ * the new role. Undefined when SSO refuses (not a standard user, or a role it does not own).
+ *
+ * @param {Session} session
+ * @param {string} roleId the `r-…` id of a role the user holds
+ * @param {string} scenario the scenario tag for the request's metrics
+ * @returns {Session | undefined}
+ */
+export function switchRole(session, roleId, scenario) {
+  const response = http.get(`${endpoints.ssoUrl}/auth/v1/set-role?role=${roleId}`, {
+    jar: session.jar,
+    tags: tags({ scenario, operation: "SetRole" }),
+  });
+  if (response.status !== 200) return undefined;
+  return { ...session, token: extractToken(response.body), issuedAt: Date.now() };
+}
+
+/**
+ * The `lucuma-user` claim of a JWT: who SSO says this is, in which role.
+ *
+ * @param {string} token
+ * @returns {{id: string, type: string, role: {type: string, id: string}, otherRoles?: {type: string, id: string}[]}}
+ */
+export function userClaim(token) {
+  const payload = token.split(".")[1] || "";
+  return JSON.parse(b64decode(payload, "rawurl", "s"))["lucuma-user"];
+}
+
+/**
+ * Log in as one of the browser personas (`stack/scripts/create-standard-users.sh`), whose
  * refresh token comes from `<PREFIX>_REFRESH_TOKEN` — the regression workflow sources the
  * file with the rest of the stack's environment.
  *
- * @param {"TEST_PI" | "TEST_STAFF"} prefix
+ * @param {"TEST_PI" | "TEST_STAFF" | "TEST_DUAL"} prefix
  * @returns {Session | undefined} undefined when the user has not been fabricated
  */
 export function loginAsStandardUser(prefix) {
