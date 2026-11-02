@@ -1,7 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import tls from "node:tls";
 import { stackEndpoints } from "./lib/endpoints.js";
 
 const endpoints = stackEndpoints(process.env);
+
+// The specs read the ODB and SSO back from Node, which trusts only what it was told at startup.
+// A shell that never sourced the generated env, or a re-bootstrapped stack with a new CA, fails
+// every fetch with "unable to get local issuer certificate", so trust the stack CA from here.
+const stackCa = new URL("./stack/certs/caddy-root.crt", import.meta.url);
+if (existsSync(stackCa)) {
+  tls.setDefaultCACertificates([...tls.getCACertificates("default"), readFileSync(stackCa, "utf8")]);
+}
 
 /**
  * Spec §5/§8: one chained guest journey, 1 retry, retried passes reported as "flaky",
