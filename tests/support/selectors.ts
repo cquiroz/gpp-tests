@@ -282,3 +282,46 @@ export const obsBadgeSubtitleEdit = (page: Page): Locator =>
  */
 export const obsBadgeSubtitleInput = (page: Page): Locator =>
   page.locator("input.obs-badge-subtitle-input");
+
+/**
+ * The help sidebar (`ExploreLayout.scala`: a PrimeReact Sidebar carrying `explore-help-sidebar`),
+ * which `HelpBody.scala` fills with a markdown page the *browser* fetches from
+ * raw.githubusercontent.com/gemini-hlsw/explore-help-docs — so a spec that asserts the page's
+ * content is not hermetic. The "Getting Started" button shows `getting-started.md`, F1 and `?`
+ * show `shortcuts.md`; Escape (the sidebar's default) and the title's own button close it.
+ */
+export const helpSidebar = (page: Page): Locator => page.locator(".explore-help-sidebar");
+
+/** The fetched page's title, which is how the two help pages tell apart. */
+export const helpHeading = (page: Page, title: RegExp): Locator =>
+  helpSidebar(page).locator(".markdown-body h1").filter({ hasText: title });
+
+/** The close button in the help's title bar; staff also get an edit link before it. */
+export const helpCloseButton = (page: Page): Locator =>
+  helpSidebar(page).locator(".explore-help-title button").last();
+
+/** The toolbar's "Getting Started" button (`TopBar.scala`), rendered only while the preference says Shown. */
+export const gettingStartedButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Getting Started" });
+
+/**
+ * "User Preferences" in the toolbar menu, for standard users only (`TopBar.scala` leaves it
+ * out for guests). PrimeReact menu items carry no test id; the label is the handle.
+ */
+export const userPreferencesMenuItem = (page: Page): Locator =>
+  page.getByRole("menuitem", { name: "User Preferences" });
+
+/**
+ * The "Show/Hide Getting Started" checkbox of User Preferences. PrimeReact puts the id on the
+ * checkbox's wrapper, not on the `<input>`, which is what check and uncheck need.
+ */
+export const guideButtonToggle = (page: Page): Locator =>
+  page.locator('#explore-guide-button input[type="checkbox"]');
+
+/** The highlighted option of the wavelength-units SelectButton in User Preferences. */
+export const wavelengthUnitsSelected = (page: Page): Locator =>
+  page.locator("#wavelength-units [aria-pressed='true'], #wavelength-units .p-highlight").first();
+
+/** The toast the `y` shortcut raises, naming the copied observation. */
+export const copiedObservationToast = (page: Page, observationId: string): Locator =>
+  page.getByText(new RegExp(`Copied observation\\(s\\).*${observationId}`));

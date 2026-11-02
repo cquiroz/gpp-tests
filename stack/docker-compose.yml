@@ -273,8 +273,16 @@ services:
   # Explore's preferences DB: stock Hasura over the `prefs` database. Required, not
   # optional — Explore hangs forever after login if this websocket cannot connect.
   # The cli-migrations image applies lucuma-apps' own migrations and metadata at startup.
+  #
+  # The version is production's minor (user-prefs-master.herokuapp.com/v1/version said
+  # v2.12.0 on 2026-11-02; v2.12.1 is the oldest tag Docker Hub still serves), and it
+  # matters: Explore's generated schema (UserPreferencesDB.graphql) has snake_case argument
+  # names — `on_conflict`, `update_columns`, `order_by` — which is what v2.12's
+  # graphql-default convention produced. Newer Hasura camelizes them, and then every
+  # preference upsert Explore sends fails validation while the sockets look fine (seen on
+  # v2.44.0: no preference ever persisted, grid layouts included).
   hasura:
-    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.44.0.cli-migrations-v3}
+    image: ${HASURA_IMAGE:-hasura/graphql-engine:v2.12.1.cli-migrations-v3}
     mem_limit: ${HASURA_MEM_LIMIT:-512m}
     depends_on:
       postgres:

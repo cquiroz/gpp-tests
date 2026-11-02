@@ -67,6 +67,10 @@ Explore is proxied live from lucuma-apps main, so a stack left up for a few days
 Explore's schema ahead of the odb's: "Schema error, reload to check for a new version" at the
 foot of every page and red runs. `npm run stack:refresh` pulls the day's `-dev` images and
 recreates only the services whose image changed, keeping the database and the fabricated users.
+The prefs schema moves the same way (Hasura applies migrations from a lucuma-apps checkout), so
+the refresh also updates that checkout and recreates Hasura when it changed. Hasura itself is
+pinned to production's version: a newer one renames the on-conflict arguments Explore's
+generated schema uses, and every preference write then fails silently.
 
 `npm run stack:up` is idempotent and prints every URL it brings up. It needs one `sudo` to add
 six hostnames to `/etc/hosts` (`SKIP_HOSTS=1` to skip; `stack/scripts/hosts.sh` adds any that

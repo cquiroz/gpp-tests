@@ -1,3 +1,8 @@
+  # Waits for Hasura, then re-applies the repairs the migrations need on a fresh schema.
+  bash "$STACK_DIR/scripts/prefs-fixups.sh"
+  compose up --detach --no-deps --force-recreate hasura
+  # Waits for Hasura, then re-applies the repairs the migrations need on a fresh schema.
+  bash "$STACK_DIR/scripts/prefs-fixups.sh"
 #!/usr/bin/env bash
 # Bring a running stack's service images up to today's `-dev` builds, in place.
 #
@@ -13,6 +18,12 @@
 # this keeps both. The odb migrates its database forward on boot, and the SSO sessions live in
 # Postgres, so the cookies the browser specs inject keep working.
 #
+# The prefs schema ages the same way: Hasura applies the migrations of the lucuma-apps
+# checkout bootstrap made (fetch-lucuma-apps.sh), and Explore's preference documents move
+# with main — seen 2026-11-02, a `theme` column: every preference query failed validation,
+# Explore fell back to defaults and silently stored nothing. So the checkout is updated and
+# Hasura recreated when it changed; its image applies the new migrations on start.
+#
 # Needs the stack up (bootstrap.sh done) and a Docker login to registry.heroku.com — the one
 # bootstrap made is usually still cached; otherwise `export HEROKU_API_KEY=…` as for bootstrap.
 #
@@ -21,7 +32,7 @@
 # image changed are recreated. Recreating any of them drops its pooled connections cleanly.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-require_cmd docker node
+require_cmd docker node git
 
 load_generated_env
 
@@ -29,6 +40,12 @@ load_generated_env
   || die "no generated environment found ($GENERATED_ENV): run stack/scripts/bootstrap.sh first"
 
 read -r -a services <<<"${SERVICES:-${STACK_IMAGE_SERVICES[*]}}"
+
+# Same default as bootstrap, so compose mounts the migrations from the same checkout.
+export LUCUMA_APPS_DIR="${LUCUMA_APPS_DIR:-$STACK_DIR/.cache/lucuma-apps}"
+prefs_before="$(git -C "$LUCUMA_APPS_DIR" rev-parse HEAD 2>/dev/null || true)"
+bash "$STACK_DIR/scripts/fetch-lucuma-apps.sh"
+prefs_after="$(git -C "$LUCUMA_APPS_DIR" rev-parse HEAD)"
 
 if [[ -n "${HEROKU_API_KEY:-}" ]]; then
   log "logging in to registry.heroku.com"
@@ -85,6 +102,16 @@ else
   [[ "$status" == "healthy" ]] || die "the odb did not become healthy; see: docker logs ${COMPOSE_PROJECT_NAME:-gpp-tests}-odb-1"
   # obscalc and the ITC answer a moment after the odb; the replay below retries nothing.
   sleep 15
+fi
+
+if [[ "$prefs_before" == "$prefs_after" ]]; then
+  log "prefs schema already at lucuma-apps $(git -C "$LUCUMA_APPS_DIR" rev-parse --short HEAD); hasura kept"
+else
+  log "recreating hasura for the prefs migrations at lucuma-apps $(git -C "$LUCUMA_APPS_DIR" rev-parse --short HEAD)"
+  # --force-recreate: the mount is unchanged as far as compose can tell, only its contents moved.
+  compose up --detach --no-deps --force-recreate hasura
+  # Waits for Hasura, then re-applies the repairs the migrations need on a fresh schema.
+  bash "$STACK_DIR/scripts/prefs-fixups.sh"
 fi
 
 for s in "${services[@]}"; do
