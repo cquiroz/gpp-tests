@@ -325,3 +325,52 @@ export const wavelengthUnitsSelected = (page: Page): Locator =>
 /** The toast the `y` shortcut raises, naming the copied observation. */
 export const copiedObservationToast = (page: Page, observationId: string): Locator =>
   page.getByText(new RegExp(`Copied observation\\(s\\).*${observationId}`));
+
+/**
+ * The undo and redo buttons of the obs tree toolbar (`UndoButtons.scala`, one global stack
+ * per program, so an edit made in any tile is undone from here). Icon-only PrimeReact
+ * buttons with a hover tooltip and no accessible name, hence the positional pair.
+ */
+export const undoButton = (page: Page): Locator =>
+  page.locator(".tree-toolbar .lucuma-ui-buttons-undo button").nth(0);
+export const redoButton = (page: Page): Locator =>
+  page.locator(".tree-toolbar .lucuma-ui-buttons-undo button").nth(1);
+
+/**
+ * A constraint dropdown of the Constraints tile (`ConstraintsPanel.scala`: `image-quality`,
+ * `cloud-extinction`, `water-vapor`, `sky-background`). The id sits on PrimeReact's hidden
+ * input, which its visible label covers, so the click goes to the dropdown root.
+ */
+export const constraintDropdown = (page: Page, id: string): Locator =>
+  page.locator(`#${id}`).locator("xpath=ancestor::div[contains(@class,'p-dropdown')][1]");
+export const dropdownLabel = (dropdown: Locator): Locator => dropdown.locator(".p-dropdown-label");
+export const dropdownItems = (page: Page): Locator =>
+  page.locator(".p-dropdown-panel .p-dropdown-item");
+
+/** The target name field of the target editor (`SearchForm.scala`, id `search`). */
+export const targetNameInput = (page: Page): Locator => page.locator("#search");
+
+/**
+ * A grid tile by its title (`Tile.scala`); the tile id is only a React key, so the title
+ * text is the handle. Minimize/restore is one button that swaps its icon (`compress` when
+ * open, `expand` when minimized); the resize handle is react-resizable's corner.
+ */
+export const tile = (page: Page, title: RegExp): Locator =>
+  page.locator(".react-grid-item").filter({
+    has: page.locator(".explore-tile-title-text", { hasText: title }),
+  });
+export const tileStateButton = (tile: Locator): Locator => tile.locator(".explore-tile-state-button");
+export const tileStateIcon = (tile: Locator): Locator => tileStateButton(tile).locator("svg");
+export const tileResizeHandle = (tile: Locator): Locator => tile.locator(".react-resizable-handle");
+
+/** The Observations Summary table's "Columns" menu and its per-column checkbox labels. */
+export const columnsButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Columns" });
+export const columnToggle = (page: Page, columnId: string): Locator =>
+  page.locator(`.pl-checkbox-with-label label[for="${columnId}"]`);
+export const summaryTableHeader = (page: Page, label: RegExp): Locator =>
+  page.locator(".observations-summary-table th").filter({ hasText: label });
+
+/** Footer button of User Preferences that deletes every stored grid layout row. */
+export const resetTileLayoutsButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Reset Tile Layouts" });

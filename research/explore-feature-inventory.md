@@ -47,7 +47,7 @@ role, or CSS class.
 | Guest to standard promotion | A guest who logs in with ORCID keeps their programs under the new standard identity | both | none | 1 | same blocker: the promotion runs through the ORCID callback |
 | Logout | Toolbar menu → Logout returns to the login dialog | e2e | none | 1 | ids (menu items are PrimeReact `MenuItem`s; same fix as Manage Programs) |
 | Role switch | Staff/NGO/PI role dropdown in the top bar (`RoleSwitch.scala`, `#role-selector-switch`) switches the SSO role and reloads program visibility | both | covered (`role-switch.spec.ts`, k6 `role-switch`; the `TEST_DUAL` persona holds pi and staff) | 3 | — |
-| Landing branch | No program in URL: a user who can see no program gets one auto-created and lands on the obs tree; one who can see some gets the Proposals & Programs dialog | e2e | partial (`loggedInLanding` accepts both, asserts neither) | 2 | — |
+| Landing branch | No program in URL: a user who can see no program gets one auto-created and lands on the obs tree; one who can see some gets the Proposals & Programs dialog | e2e | covered (`landing.spec.ts`: a guest lands on the obs tree of a program made for them, read back from the ODB; a PI with a program gets the dialog with that program listed) | 3 | — |
 | Connections status | ODB and prefs websocket indicators (`ConnectionsStatus.scala`); Explore renders nothing past the spinner until both connect | e2e | partial (shell render proves both) | 2 | ids to assert the indicator itself |
 | Tab navigation | Overview, Proposal, Observations, Targets, Constraints, Scheduling tabs and their URL routes (`Page.scala`: 19 pages) | e2e | partial (journey lands on Observations) | 2 | ids for the tab buttons; the URL shapes are stable and assertable now |
 | Deep links and reference resolvers | `/G-2026A-0001`, `/G-2026A-0001-Q`, `/G-2026A-0001-Q-0001` resolve to the proposal, program or observation page; unknown labels toast and fall back | both | covered (`deep-links.spec.ts`; the proposal reference in `proposals.spec.ts` scenario 5; k6 `resolve-reference`) | 3 | — |
@@ -164,9 +164,9 @@ role, or CSS class.
 
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
-| Tile layouts | Drag/resize tiles per tab, survive reload; "Reset Tile Layouts" | e2e | partial (socket alive) | 2 | assert via reload and via the Hasura GraphQL (`lib/endpoints.js` already knows the prefs URL) |
-| Tile open/closed state | Minimize tiles; persisted | e2e | none | 1 | — |
-| Table column visibility and sort | Persisted per `TableId` | e2e | none | 1 | — |
+| Tile layouts | Drag/resize tiles per tab, survive reload; "Reset Tile Layouts" | e2e | covered (`layout-preferences.spec.ts`: a resize read back from Hasura and across a reload; Reset Tile Layouts deletes the rows and the default returns) | 3 | — |
+| Tile open/closed state | Minimize tiles; persisted | e2e | covered (`layout-preferences.spec.ts`; stored as height 1 of the tile's layout row, there is no separate column) | 3 | — |
+| Table column visibility and sort | Persisted per `TableId` | e2e | covered (`layout-preferences.spec.ts`: the Observations Summary's RA column and a sort by target, read back from `lucumaTablePreferences` and across a reload) | 3 | — |
 | Aladin preferences | FOV, overlays, survey; persisted | e2e | none | 1 | ids |
 | Global preferences | Wavelength units, elevation plot options, theme | e2e | partial (wavelength units, via `w`, read back from Hasura after a reload) | 2 | ids |
 | User Preferences dialog | API keys (create with role, delete), clean local cache, show/hide Getting Started | e2e | partial (show/hide Getting Started, persisted) | 2 | ids; API-key creation is also a `gql` candidate, since the key is an SSO mutation the suite does not exercise yet |
@@ -177,7 +177,7 @@ role, or CSS class.
 |---|---|---|---|---|---|
 | Observation/target/program subscriptions | A change made through the API shows up in an open Explore tab without reload | e2e + k6 | k6 measures the subscription round trip (`explore-tab` subscriber VU); no browser assertion | 2 | a two-client spec: mutate through GraphQL, assert the UI updated; cheap once ids exist |
 | Multi-tab consistency | Two browser contexts on the same program | e2e | none | 1 | same as above with two Playwright contexts |
-| Undo / redo | Every edit goes through `UndoContext` (`UNDO.md`); undo restores the remote copy | e2e | none | 1 | keyboard `mod+z` and the undo buttons; assert the GraphQL read-back after undo, the strongest cross-layer check Explore offers |
+| Undo / redo | Every edit goes through `UndoContext` (`UNDO.md`); undo restores the remote copy | e2e | covered (`undo-redo.spec.ts`: a constraint dropdown and the target name, each undone and redone with the ODB read back; Explore binds no key for it, the obs tree's buttons are the only path) | 3 | — |
 
 ## What to pick first
 
