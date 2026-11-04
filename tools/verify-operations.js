@@ -26,6 +26,11 @@ import {
   programAttachments,
   observation,
   observationCalculated,
+  addTimeChargeCorrection,
+  observationCalibration,
+  observationExecution,
+  programTimes,
+  setAllocations,
   observations,
   programDetails,
   programs,
@@ -150,10 +155,13 @@ if (observationId) {
 
 await check(token, programs({}));
 await check(token, programDetails({ programId }));
+await check(token, programTimes({ programId }));
 await check(token, observations({ programId }));
 await check(token, targets({ programId }));
 if (observationId) {
   await check(token, observation({ observationId }));
+  await check(token, observationExecution({ observationId }));
+  await check(token, observationCalibration({ observationId }));
   // obscalc computes the digest asynchronously and takes tens of seconds, so immediately
   // after creating an observation the ODB answers this query with a `sequence_unavailable`
   // error rather than a value. That is the expected state here: this tool checks that the
@@ -201,6 +209,11 @@ async function verifyExecutionOperations(serviceToken) {
   );
   const observationId = created?.createObservation.observation.id;
   if (!observationId) return;
+  // Staff-only: the award the Program Details tile shows; the service user clears that bar.
+  await check(
+    serviceToken,
+    setAllocations({ programId, allocations: [{ category: "US", scienceBand: "BAND1", hours: 10 }] }),
+  );
 
   const visit = await check(
     serviceToken,
@@ -208,6 +221,10 @@ async function verifyExecutionOperations(serviceToken) {
   );
   const visitId = visit?.recordVisit.visit.id;
   if (!visitId) return;
+  await check(
+    serviceToken,
+    addTimeChargeCorrection({ visitId, hours: 0.5, comment: "gpp-tests verify" }),
+  );
   await check(
     serviceToken,
     addSequenceEvent({ visitId, command: "START", idempotencyKey: key(), clientTime: at() }),

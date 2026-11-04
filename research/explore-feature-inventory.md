@@ -77,7 +77,7 @@ role, or CSS class.
 | Call for proposals (staff) | Open/close calls, deadlines, instruments | gql | covered (`proposal-call`) | 3 | the UI for calls lives outside Explore |
 | AEON required instruments | Multi-facility proposal table | e2e | none | 1 | ids; low priority |
 | Configuration requests | Program tab: request approval for unrequested configurations, withdraw, resubmit; staff approve/deny with justification feedback (`ProgramConfigRequestsTile`, `ProgramUnrequestedConfigsTile`, `ConfigurationRequestEditorPopup`) | both | none | 1 | ids; role for the staff side; the GraphQL side is plain mutations and could land in k6 first |
-| Time award and time accounting | Tables of awarded, prepared, used, remaining time by band (`TimeAwardTable`, `TimeAccountingTable`) | both | none | 1 | the award is a staff mutation; the "used" column needs visits, which the k6 execution VU already records, so a joint scenario is possible |
+| Time award and time accounting | Tables of awarded, prepared, used, remaining time by band (`TimeAwardTable`, `TimeAccountingTable`) | both | covered (`time-accounting.spec.ts`: award by `setAllocations`, prepared from obscalc, used by a staff time charge correction, every cell checked against the ODB) | 3 | — (a visit's own seconds only count inside the site's nautical night, so the used time is a correction) |
 
 ## 3. Observation tree and observation lifecycle
 
@@ -98,7 +98,7 @@ role, or CSS class.
 | Multi-select | Shift/ctrl click selects an `ObsIdSet`; the Targets/Constraints/Scheduling tabs then edit the set at once | e2e | none | 1 | ids |
 | Observations Summary | Table view of all observations with column selector, sticky columns, filters (`ObsSummaryTile`) | e2e | none | 1 | ids on rows (`data-obs-id` pattern, as with programs) |
 | Group warnings | Overview tile listing group-level problems | e2e | none | 1 | ids |
-| Sequence copy dialog | When cloning an executed observation: copy all steps / pending steps / generate new | e2e | none, but the five ids ship | 1 | needs visits recorded, which the k6 execution VU can do against the stack |
+| Sequence copy dialog | When cloning an executed observation: copy all steps / pending steps / generate new | e2e | covered (`sequence-copy.spec.ts`: an executed observation seeded through the service role, then Cancel, Copy all steps and Generate new with the clone's execution flags read back) | 3 | — |
 
 ## 4. Targets
 
@@ -136,7 +136,7 @@ role, or CSS class.
 | MOS mask | Mask picker (upload a custom mask) | both | none | 1 | store; ids |
 | Position angle | Fixed, allow flip, average parallactic, unconstrained | both | none | 1 | ids |
 | Observation time | Observation date/time editor (`ObsTimeEditor`) | both | none | 1 | ids |
-| Daytime calibration | Daytime configuration tile, calibration sets table, instrument (`DaytimeConfigurationTile`, `explore-daytime-cal-instrument`) | both | none | 1 | role (staff) |
+| Daytime calibration | Daytime configuration tile, calibration sets table, instrument (`DaytimeConfigurationTile`, `explore-daytime-cal-instrument`) | both | covered (`daytime-calibration.spec.ts`: a PI's tree has no button; staff create one, add a set and switch the instrument, each read back from the ODB) | 3 | — |
 | ITC tile | Spectroscopy plot and imaging results, exposure count, S/N at wavelength, graph controls (`itc/*`) | e2e | partial (appearance) | 2 | ids on the result figures |
 | Sequence tile | Generated sequence steps, planned time, "customized" flag, per-instrument tables, execution state per step | e2e | covered (planned + steps exist) | 3 | — ; executed-step rendering needs visits (k6 execution VU) |
 | Validations | Observation validations table (Overview "warnings and errors") | e2e | none | 1 | ids |
@@ -176,7 +176,7 @@ role, or CSS class.
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
 | Observation/target/program subscriptions | A change made through the API shows up in an open Explore tab without reload | e2e + k6 | k6 measures the subscription round trip (`explore-tab` subscriber VU); no browser assertion | 2 | a two-client spec: mutate through GraphQL, assert the UI updated; cheap once ids exist |
-| Multi-tab consistency | Two browser contexts on the same program | e2e | none | 1 | same as above with two Playwright contexts |
+| Multi-tab consistency | Two browser contexts on the same program | e2e | covered (`multi-tab.spec.ts`: a constraint, a target name and a new observation reach the watching context without a reload) | 3 | — |
 | Undo / redo | Every edit goes through `UndoContext` (`UNDO.md`); undo restores the remote copy | e2e | covered (`undo-redo.spec.ts`: a constraint dropdown and the target name, each undone and redone with the ODB read back; Explore binds no key for it, the obs tree's buttons are the only path) | 3 | — |
 
 ## What to pick first

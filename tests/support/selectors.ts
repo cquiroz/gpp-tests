@@ -374,3 +374,54 @@ export const summaryTableHeader = (page: Page, label: RegExp): Locator =>
 /** Footer button of User Preferences that deletes every stored grid layout row. */
 export const resetTileLayoutsButton = (page: Page): Locator =>
   page.getByRole("button", { name: "Reset Tile Layouts" });
+
+/** A PrimeReact dropdown by the id of its hidden input, addressed at its clickable root. */
+export const dropdownRoot = (page: Page, id: string): Locator =>
+  page.locator(`#${id}`).locator("xpath=ancestor::div[contains(@class,'p-dropdown')][1]");
+
+/**
+ * Staff-only obs tree button that creates a daytime calibration observation
+ * (`ObsTree.scala`, GMOS North by default). Icon only, so the id is the handle.
+ */
+export const addDaytimeCalibrationButton = (page: Page): Locator =>
+  page.getByTestId("explore-obs-tree-add-daytime-cal");
+
+/**
+ * The Daytime Calibration tile (`DaytimeConfigurationTile.scala`): the instrument dropdown
+ * (`daytime-cal-instrument`), the "calibration set" add button and the per-cell ids of the
+ * sets table (`daytime-cal-set-<column>-<row>`, columns `kind`, `count`, `exposure`, ...).
+ */
+export const daytimeCalInstrument = (page: Page): Locator =>
+  dropdownRoot(page, "daytime-cal-instrument");
+export const addCalibrationSetButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "calibration set" });
+export const calibrationSetCell = (page: Page, column: string, row: number): Locator =>
+  page.locator(`#daytime-cal-set-${column}-${row}`);
+
+/**
+ * An obs tree card by the observation id it shows (`ObsBadge.scala`), and its "Duplicate"
+ * button (icon only, tooltip "Duplicate"), the one path that opens the sequence copy dialog.
+ */
+export const obsBadge = (page: Page, observationId: string): Locator =>
+  page.locator(".obs-badge").filter({ hasText: observationId });
+export const duplicateObservationButton = (badge: Locator): Locator =>
+  badge.locator(".obs-clone-button");
+
+/** The sequence copy dialog (`SequenceCopyDialog.scala`) and its four footer buttons. */
+export const sequenceCopyDialog = (page: Page): Locator =>
+  page.getByTestId("explore-sequence-copy-dialog");
+export const sequenceCopyChoice = (
+  page: Page,
+  choice: "generate-new" | "pending-steps" | "all-steps" | "cancel",
+): Locator => page.getByTestId(`explore-sequence-copy-${choice}`);
+
+/**
+ * The Program Details tile's two time tables (`TimeAwardTable.scala`,
+ * `TimeAccountingTable.scala`), both plain PrimeTables in document order; rows by label.
+ */
+export const timeAwardTable = (page: Page): Locator =>
+  page.locator(".program-details-tile .program-tab-table").nth(0);
+export const timeAccountingTable = (page: Page): Locator =>
+  page.locator(".program-details-tile .program-tab-table").nth(1);
+export const tableRow = (table: Locator, label: RegExp): Locator =>
+  table.locator("tr").filter({ hasText: label });

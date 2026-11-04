@@ -4,7 +4,7 @@
 
 <https://github.com/gemini-hlsw/lucuma-odb/blob/main/modules/schema/src/main/resources/lucuma/odb/graphql/OdbSchema.graphql>
 
-taken on **2026-08-19**.
+taken on **2026-11-02**.
 
 It exists so `npm test` can validate every document *and* every variable payload in
 `lib/odb-operations.js` against the real ODB schema offline, in about 50 ms — which is what
