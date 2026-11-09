@@ -1,0 +1,75 @@
+# Pull-request checks: the cheap, deterministic `npm run check` gates merging; the e2e suite
+# on a fresh stack runs alongside for the reviewer to read, not as a required check, because
+# Explore is served live from Firebase and can turn a PR red on its own. Promote `e2e` to a
+# required status once a few weeks of PR runs show how often that happens.
+name: pr
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same PR supersedes the run in flight, unlike the daily run.
+concurrency:
+  group: pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GPP_TEST_DOMAIN: gpp-test.internal
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Secrets are withheld from fork PRs on a public repository, so the stack cannot boot
+      # there; same-repo branches get the full run.
+      - name: Boot the ephemeral stack
+        uses: ./.github/actions/boot-stack
+        with:
+          heroku-api-key: ${{ secrets.HEROKU_API_KEY }}
+          domain: gpp-test.internal
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright suite
+        run: |
+          source stack/.env.generated
+          npm run e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-pr-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+
+      - name: Tear the stack down
+        if: always()
+        run: stack/scripts/down.sh

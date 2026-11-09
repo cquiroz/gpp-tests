@@ -28,7 +28,7 @@ Grafana Cloud stack. Vocabulary is in [`CONTEXT.md`](CONTEXT.md); read it first.
 | `tools/` | The small CLIs CI drives: verify operations, compute thresholds, write the run summary, post annotations. |
 | `grafana/` | The custom dashboard and the Grafana Cloud setup notes ([README](grafana/README.md)). |
 | `loadtest/` | The AWS load target: `aws-run.sh` (the standard unattended run), `aws-first-run.sh` (the wizard behind it), `guard.sh`; plus the deferred Heroku design ([README](loadtest/README.md)). |
-| `.github/` | `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
+| `.github/` | `pr.yml` (PR gate: `npm run check` required, the e2e suite informative), `regression.yml`, `performance.yml`, the shared boot-stack action, and their scripts. |
 | `ARCHITECTURE.md` | The high-level picture: suites, hosts, how they interact and where each runs, with diagrams. Start here. |
 | `wayfinder/`, `research/` | Where every decision came from. Read these before changing a decision. Includes the [AWS load-target design note](research/aws-load-target-options.md). |
 
