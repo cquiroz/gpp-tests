@@ -35,7 +35,9 @@ picker (mode, instrument, AO filter, rows, accept, ITC progress), visitor editor
 fields), sequence tile (planned, customized, step), sequence-copy dialog (five), daytime
 cal instrument, proposal (title, category, band3, partners, errors, submit, retract),
 user preferences (guide button), and `explore-mode-summary`. Everything else is text,
-role, or CSS class.
+role, or CSS class. Pending upstream on lucuma-apps `obs-lifecycle-testids`: the obs
+badge (`explore-obs-badge` with `data-obs-id`, and its duplicate, delete and state
+controls).
 
 ## 1. Shell, session and navigation
 
@@ -84,11 +86,11 @@ role, or CSS class.
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
 | Create observation | "Obs" button; also "Grp" and "Add a new Daytime Calibration" (`explore-obs-tree-add-daytime-cal`) | both | covered (obs only) | 2 | ids for Grp (daytime cal has one) |
-| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | partial (the clone itself, through the `p` shortcut in `keyboard-shortcuts.spec.ts`; the badge button not yet) | 2 | ids on the badge buttons (ticket 032 items 2–6 are the subtitle set; the clone/delete buttons need a sibling ask) |
-| Delete and undelete | Badge delete; multi-select delete with the "Observations delete" confirm dialog; undo restores | both | none | 1 | ids |
+| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | covered (`observation-lifecycle.spec.ts`: the badge button, no dialog, the clone read back; the `p` shortcut in `keyboard-shortcuts.spec.ts`) | 3 | — (badge ids pending upstream merge; local bundle until then) |
+| Delete and undelete | Badge delete; multi-select delete with the "Observations delete" confirm dialog; undo restores | both | partial (`observation-lifecycle.spec.ts`: badge delete through the confirm dialog, the ODB read back; multi-select and undo-restore not yet) | 2 | — |
 | Subtitle edit | Badge "Add description" / pencil / inline input | both | written, skipped (journey scenario 4) | 1 | ids (ticket 032) |
 | Science band | Popup menu on the badge sets the band from the program's allocations | both | none | 1 | ids; needs a time award first (staff) |
-| Workflow state | Activate/inactivate, ready/ongoing/completed badges, state transitions | both | none | 1 | ids; the workflow-state mutation is not in `lib/odb-operations.js` yet (the proposal spec polls the state, it does not set it) |
+| Workflow state | Activate/inactivate, ready/ongoing/completed badges, state transitions | both | partial (`observation-lifecycle.spec.ts`: Inactive through the badge dropdown and back to the earlier state, the ODB read back; ready/ongoing/completed not driven) | 2 | the `gql` half: the workflow-state mutation is not in `lib/odb-operations.js` yet |
 | Observer notes, priority, ToO activation | Observation Details tile fields | both | none | 1 | ids |
 | Tellurics | Telluric selection per observation (badge dropdown Hot/A0V/…/None) | both | none | 1 | ids; only for spectroscopy modes that take tellurics |
 | Blind offset indicator | Badge icon when a blind offset is set | e2e | none | 1 | ids |
@@ -184,9 +186,10 @@ role, or CSS class.
 Ranked by value to the regression claim over cost, given what the stack and the ids
 allow today:
 
-1. **Observation lifecycle through the UI** — clone, delete/undelete, workflow state,
-   science band. P0 in COVERAGE.md and still `partial`. Blocked only by badge ids; fold
-   the clone/delete buttons into ticket 032's ask so one lucuma-apps PR unblocks both.
+1. **Observation lifecycle through the UI** — clone, delete and inactivate/reactivate
+   landed in `observation-lifecycle.spec.ts` (badge ids on lucuma-apps
+   `obs-lifecycle-testids`, pending merge). Left: undelete through undo, multi-select
+   delete, science band.
 2. **Constraint set and timing windows** — pure ODB forwarding, deterministic, one tile
    each. Needs ids on about ten inputs; the GraphQL variant can land in k6 the same week.
 3. **Groups** — create, type, ordered, delays; then drag-and-drop separately.
