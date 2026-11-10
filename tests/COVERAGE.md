@@ -26,7 +26,7 @@ reorder from real usage knowledge.
 | Multi-tab consistency | Two Explore contexts on one program | covered (a constraint, a target name and a new observation, each appearing in the watching context without a reload) | `multi-tab.spec.ts` | P1 |
 | Program management | Create, select, list in Proposals & Programs dialog | covered | `journey.spec.ts` scenario 2 | P0 |
 | Program details | Name/subtitle edits, notes, program-level views | none (the subtitle edit is written but skipped) | `journey.spec.ts` scenario 4 — skipped pending the obs-badge testids, wayfinder ticket 032 | P1 |
-| Observations: lifecycle | Create, clone, delete, activate/deactivate | partial (create only) | `journey.spec.ts` scenario 3 | P0 |
+| Observations: lifecycle | Create, clone, delete, activate/deactivate | covered (pending the obs badge ids reaching the dev deploy; until then against a local bundle) | `journey.spec.ts` scenario 3 (create); `observation-lifecycle.spec.ts` (clone, deactivate/reactivate, delete) | P0 |
 | Targets: manual sidereal | Empty sidereal target, coordinate entry | partial (created via UI, coordinates set via API) | `journey.spec.ts` scenario 3 | P1 |
 | Targets: catalog search | Simbad name search in the Add Target dialog | none | — | P1 (spec §12 item) |
 | Targets: editing | Magnitudes, proper motion, radial velocity, SED | none | — | P1 |

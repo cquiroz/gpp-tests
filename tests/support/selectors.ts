@@ -425,3 +425,41 @@ export const timeAccountingTable = (page: Page): Locator =>
   page.locator(".program-details-tile .program-tab-table").nth(1);
 export const tableRow = (table: Locator, label: RegExp): Locator =>
   table.locator("tr").filter({ hasText: label });
+
+/* ── Observation lifecycle (obs badge ids, lucuma-apps `obs-lifecycle-testids`) ─────── */
+
+/**
+ * The obs tree card of one observation, matched on the id the card carries, so the
+ * assertion is "this exact observation is listed".
+ */
+export const obsBadgeById = (page: Page, observationId: string): Locator =>
+  page
+    .getByTestId("explore-obs-badge")
+    .and(page.locator(`[data-obs-id="${observationId}"]`));
+
+/** Delete opens a confirmation; Duplicate clones at once unless the sequence is materialized. */
+export const obsBadgeDelete = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-delete");
+export const obsBadgeDuplicate = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-duplicate");
+
+/**
+ * The workflow state dropdown. The id is on its wrapper span; the label shows the state's
+ * name ("Defined", "Inactive"), and only valid transitions are offered as options.
+ */
+export const obsBadgeState = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-state");
+export const obsBadgeStateLabel = (badge: Locator): Locator =>
+  obsBadgeState(badge).locator(".p-dropdown-label");
+
+/** The accept button of the "Observations delete" confirmation (`ObsTree.scala`). */
+export const confirmDeleteButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Yes, delete" });
+
+/**
+ * An option in the open dropdown overlay only. The state dropdown also renders a hidden
+ * native `<select>` whose current option has the same name, which {@link dropdownOption}
+ * would match too.
+ */
+export const dropdownPanelOption = (page: Page, label: string): Locator =>
+  page.locator(".p-dropdown-panel").getByRole("option", { name: label, exact: true });
