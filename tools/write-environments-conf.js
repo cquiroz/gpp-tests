@@ -39,7 +39,7 @@ async function fetchUpstreamConf(origin) {
 
 const output = resolve(process.argv[2] ?? DEFAULT_OUTPUT);
 const endpoints = stackEndpoints(process.env);
-const origin = process.env.EXPLORE_ORIGIN ?? "explore-gemini-dev.web.app";
+const origin = process.env.EXPLORE_ORIGIN ?? "explore-dev.gemini.edu";
 
 const conf = mergeEnvironmentsConf(await fetchUpstreamConf(origin), endpoints);
 
