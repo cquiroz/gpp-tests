@@ -208,7 +208,7 @@ mv "$GENERATED_ENV_TMP" "$GENERATED_ENV"
 # 5. Explore's runtime configuration, then everything else
 # ---------------------------------------------------------------------------
 log "writing Explore's environments.conf.json"
-EXPLORE_ORIGIN="${EXPLORE_ORIGIN:-explore-gemini-dev.web.app}" \
+EXPLORE_ORIGIN="${EXPLORE_ORIGIN:-explore-dev.gemini.edu}" \
   node "$REPO_DIR/tools/write-environments-conf.js" \
   "$STACK_DIR/.cache/explore/environments.conf.json"
 

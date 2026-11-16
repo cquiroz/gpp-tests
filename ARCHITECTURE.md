@@ -68,7 +68,7 @@ flowchart LR
       s3[("object store :7070<br/>versitygw, proposal attachments")]
     end
   end
-  firebase["Firebase dev hosting<br/>Explore bundle"]
+  exploredev["explore-dev.gemini.edu<br/>Explore bundle, S3 + CloudFront"]
   heroku["Heroku container registry<br/>lucuma -dev images"]
   grafana["Grafana Cloud<br/>k6 metrics, Tempo traces, annotations"]
   rundata["run-data branch<br/>summaries, threshold ledger"]
@@ -80,7 +80,7 @@ flowchart LR
   caddy --> sso
   caddy --> itc
   caddy --> hasura
-  caddy -. proxies Explore .-> firebase
+  caddy -. proxies Explore .-> exploredev
   odb --> pg
   obscalc --> pg
   odb --> itc
@@ -93,7 +93,7 @@ flowchart LR
 
 Caddy fronts every service under `*.gpp-test.internal` with its own CA, so the suites use one
 hostname scheme locally, in CI and on AWS. Explore does not run in the stack: Caddy proxies
-Firebase's dev hosting, so the browser suite tests the Explore build that is actually
+Explore's dev deploy (explore-dev.gemini.edu), so the browser suite tests the Explore build that is actually
 deployed. Bootstrap mints the SSO keypair and the service JWT, waits for all eight services,
 replays every GraphQL operation as a contract check, and fabricates the PI and staff users
 the suites log in as.

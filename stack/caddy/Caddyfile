@@ -5,7 +5,7 @@
 # insecureSkipTLSVerify, and Node clients get the root via NODE_EXTRA_CA_CERTS — bootstrap
 # exports it to stack/certs/caddy-root.crt.
 #
-# Explore is proxied from Firebase dev hosting (which tracks lucuma-apps main), so nothing
+# Explore is proxied from its dev deploy, explore-dev.gemini.edu (tracks lucuma-apps main), so nothing
 # has to build a Scala.js bundle in CI. The one file we override is environments.conf.json,
 # which is what points the app at this stack. Swap CADDYFILE=./caddy/Caddyfile.bundle to
 # serve a locally-built bundle instead (spec §10 ask 3).
@@ -30,7 +30,7 @@ explore.{$GPP_TEST_DOMAIN} {
 	handle {
 		reverse_proxy https://{$EXPLORE_ORIGIN} {
 			header_up Host {$EXPLORE_ORIGIN}
-			# Firebase Hosting serves the SPA fallback itself, so no rewrite is needed.
+			# CloudFront serves the SPA fallback itself, so no rewrite is needed.
 		}
 	}
 }

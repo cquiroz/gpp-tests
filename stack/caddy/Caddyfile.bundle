@@ -1,5 +1,5 @@
 # Alternative front door that serves a locally-built Explore bundle instead of proxying
-# Firebase dev hosting. Use it once lucuma-apps publishes the bundle as a CI artifact
+# Explore's dev deploy. Use it once lucuma-apps publishes the bundle as a CI artifact
 # (spec §10 ask 3), or to test a specific Explore commit:
 #
 #   EXPLORE_BUNDLE_DIR=/path/to/explore/heroku/static \

@@ -309,7 +309,7 @@ services:
 
   # TLS front door. Everything the browser and k6 see is https under one registrable
   # domain, which is what staging-mode SSO's Secure/SameSite=Strict cookie requires.
-  # Explore itself is proxied from Firebase dev hosting (tracks lucuma-apps main), with our
+  # Explore itself is proxied from its dev deploy (tracks lucuma-apps main), with our
   # own environments.conf.json served in front of it.
   caddy:
     image: ${CADDY_IMAGE:-caddy:2}
@@ -321,7 +321,7 @@ services:
       - hasura
     environment:
       GPP_TEST_DOMAIN: ${GPP_TEST_DOMAIN:-gpp-test.internal}
-      EXPLORE_ORIGIN: ${EXPLORE_ORIGIN:-explore-gemini-dev.web.app}
+      EXPLORE_ORIGIN: ${EXPLORE_ORIGIN:-explore-dev.gemini.edu}
       # The odb's upstreams, space-separated: `odb:8082`, or both web processes when
       # ODB_WEB_DYNOS=2 (bootstrap sets it).
       ODB_UPSTREAMS: ${ODB_UPSTREAMS:-odb:8082}

@@ -9,8 +9,8 @@
 #   stack/scripts/refresh.sh            # pull sso, odb, obscalc, itc; recreate what changed
 #   SERVICES="odb obscalc" stack/scripts/refresh.sh   # a subset
 #
-# Why this exists: Explore is not a container here — Caddy proxies it live from Firebase dev
-# hosting, which tracks lucuma-apps main every day — while the odb, obscalc, ITC and SSO images
+# Why this exists: Explore is not a container here — Caddy proxies it live from its dev
+# deploy, which tracks lucuma-apps main every day — while the odb, obscalc, ITC and SSO images
 # are whatever bootstrap pulled. A few days later Explore's schema is ahead of the odb's and
 # every run goes red with "Schema error, reload to check for a new version" at the foot of
 # the page, and mutations Explore issues are refused (seen 2026-10-26 and 2026-10-30). A

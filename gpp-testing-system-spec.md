@@ -52,7 +52,7 @@ One compose file boots, per run, from empty:
 | itc | `registry.heroku.com/itc-dev/web:latest` | Redis omitted (optional off Heroku) |
 | obscalc | `registry.heroku.com/lucuma-postgres-odb-dev/obscalc:latest` | needed for calculated-results assertions |
 | hasura (prefs) | `hasura/graphql-engine` | **required** — Explore hangs after login without it ([evidence](research/explore-prefs-resource-deps.md)); migrations from `lucuma-apps/explore/hasura/user-prefs/`; naming-convention flags; unauthenticated |
-| explore | static server | bundle fetched from Firebase **dev** hosting + our own `environments.conf.json` |
+| explore | static server | bundle proxied from the **dev** deploy (explore-dev.gemini.edu; Firebase until 2026-11) + our own `environments.conf.json` |
 | caddy | TLS proxy, internal CA | `explore/sso/odb.gpp-test.internal` via runner `/etc/hosts`; Playwright trusts the CA, k6 `insecureSkipTLSVerify` |
 
 Bootstrap: `docker login registry.heroku.com` with `HEROKU_API_KEY` → pull `:latest`
@@ -163,7 +163,7 @@ test-only).
 2. **lucuma-odb (SSO):** parameterize `Config.JwtLifetime` (already `TODO`) as an env
    var, default 10 min — test envs set it long, load scripts drop the refresh loop.
 3. **lucuma-apps (nice-to-have):** publish the Explore bundle as a CI artifact so the
-   stack stops fetching from Firebase hosting.
+   stack stops fetching from the dev deploy.
 
 ## 11. Rollout milestones
 
