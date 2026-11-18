@@ -28,6 +28,7 @@ import {
   observationCalculated,
   addTimeChargeCorrection,
   observationCalibration,
+  observationScheduling,
   observationExecution,
   programTimes,
   setAllocations,
@@ -162,6 +163,7 @@ if (observationId) {
   await check(token, observation({ observationId }));
   await check(token, observationExecution({ observationId }));
   await check(token, observationCalibration({ observationId }));
+  await check(token, observationScheduling({ observationId }));
   // obscalc computes the digest asynchronously and takes tens of seconds, so immediately
   // after creating an observation the ODB answers this query with a `sequence_unavailable`
   // error rather than a value. That is the expected state here: this tool checks that the

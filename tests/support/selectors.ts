@@ -463,3 +463,29 @@ export const confirmDeleteButton = (page: Page): Locator =>
  */
 export const dropdownPanelOption = (page: Page, label: string): Locator =>
   page.locator(".p-dropdown-panel").getByRole("option", { name: label, exact: true });
+
+/* ── Constraints and scheduling windows ───────────────────────────────────────────────
+ *
+ * The Constraints tile's fields carry plain element ids (`ConstraintsPanel.scala`): the
+ * four condition dropdowns (see {@link constraintDropdown}), `ertype` for the elevation
+ * range type, and `minam`/`maxam` or `minha`/`maxha` for its limits. The Scheduling tile
+ * (`SchedulingWindowsTile.scala`) has ids on its editor fields too; the add button, the
+ * rows and their delete buttons got test ids with the obs badge ones.
+ */
+
+/** A text field by its element id; FormInputTextView puts the id on the `<input>`. */
+export const formInput = (page: Page, id: string): Locator => page.locator(`input#${id}`);
+
+/** The label of a radio button or checkbox, which is where a click lands reliably. */
+export const labelFor = (page: Page, id: string): Locator => page.locator(`label[for="${id}"]`);
+
+export const addTimingWindowButton = (page: Page): Locator =>
+  page.getByTestId("explore-scheduling-add-window");
+export const timingWindowRows = (page: Page): Locator =>
+  page.getByTestId("explore-scheduling-window-row");
+export const timingWindowDelete = (row: Locator): Locator =>
+  row.getByTestId("explore-scheduling-window-delete");
+
+/** A PrimeReact checkbox's `<input>`; its id sits on the wrapper, so a `label[for]` click misses. */
+export const checkboxInput = (page: Page, id: string): Locator =>
+  page.locator(`#${id} input[type="checkbox"]`);

@@ -37,7 +37,7 @@ cal instrument, proposal (title, category, band3, partners, errors, submit, retr
 user preferences (guide button), and `explore-mode-summary`. Everything else is text,
 role, or CSS class. Pending upstream on lucuma-apps `obs-lifecycle-testids`: the obs
 badge (`explore-obs-badge` with `data-obs-id`, and its duplicate, delete and state
-controls).
+controls) and the Scheduling tile's add button, window rows and their delete button.
 
 ## 1. Shell, session and navigation
 
@@ -148,9 +148,9 @@ controls).
 
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
-| Constraint set | Image quality, cloud extinction, water vapor, sky background, elevation range (air mass / hour angle), "likelihood of selected conditions" | both | none | 1 | ids; `lib/odb-operations.js` already reads `constraintSet` back, so the assertion side exists |
+| Constraint set | Image quality, cloud extinction, water vapor, sky background, elevation range (air mass / hour angle), "likelihood of selected conditions" | both | covered (`constraints-scheduling.spec.ts`: the four conditions, air mass and hour angle limits, read back through `observationScheduling`; the likelihood display not asserted) | 3 | — (the fields' element ids were enough) |
 | Constraints tab | Shared constraint groups across selected observations | both | none | 1 | ids |
-| Timing windows | Inclusion/exclusion windows, forever/through, repeat period and count, delete | both | none | 1 | ids |
+| Timing windows | Inclusion/exclusion windows, forever/through, repeat period and count, delete | both | partial (`constraints-scheduling.spec.ts`: add, exclude, a duration, repeat with a count, delete; the "through" date picker not yet) | 2 | — (add, row and delete ids pending upstream) |
 | Scheduling mode | Scheduling tab per observation set | both | none | 1 | ids |
 | Scheduling groups | Shared windows across selected observations | both | none | 1 | ids |
 
@@ -190,8 +190,8 @@ allow today:
    landed in `observation-lifecycle.spec.ts` (badge ids on lucuma-apps
    `obs-lifecycle-testids`, pending merge). Left: undelete through undo, multi-select
    delete, science band.
-2. **Constraint set and timing windows** — pure ODB forwarding, deterministic, one tile
-   each. Needs ids on about ten inputs; the GraphQL variant can land in k6 the same week.
+2. **Constraint set and timing windows** — landed in `constraints-scheduling.spec.ts`.
+   Left: the "through" end date, and the shared Constraints and Scheduling tabs.
 3. **Groups** — create, type, ordered, delays; then drag-and-drop separately.
 4. **Target editor fields** — coordinates, proper motion, RV, then source profile. The
    source profile is what the ITC consumes, so it also hardens observing-modes.
