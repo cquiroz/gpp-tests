@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "testid": "regression-44566407207",
+  "suite": "regression",
+  "environment": "ephemeral",
+  "startedAt": "2026-11-19T16:28:13.000Z",
+  "endedAt": "2026-11-19T16:44:24.184Z",
+  "durationSeconds": 971.184,
+  "outcome": "flaky",
+  "thresholds": {
+    "mode": "baseline",
+    "breaches": []
+  },
+  "images": {
+    "sso": "registry.heroku.com/lucuma-sso-dev/web@sha256:ea3f1c3e9ac05d7a31285ce4e35e30dc8a18e7cb4f8ebb7e79013ab36b2510b3",
+    "odb": "registry.heroku.com/lucuma-postgres-odb-dev/web@sha256:57c24b765d0917fd055bc89dd3cac8a73b165f6bea46dade04641139be9f36da",
+    "itc": "registry.heroku.com/itc-dev/web@sha256:baf8ac3a0ee5b56ba588f6add4d5cb73629d5321ce10a4505c58a2dca68a5c49",
+    "obscalc": "registry.heroku.com/lucuma-postgres-odb-dev/obscalc@sha256:203b04e1a3efa4cbbf8822f0d0397f99c5d5d2365b5343b956b6d4facd09f774"
+  },
+  "scenarios": [
+    {
+      "name": "staff add a daytime calibration from the obs tree and edit its instrument and sets",
+      "status": "passed",
+      "durationSeconds": 78.881
+    },
+    {
+      "name": "program and observation references in the URL open the page they name",
+      "status": "passed",
+      "durationSeconds": 17.746
+    },
+    {
+      "name": "the Getting Started guide opens from the top bar, and User Preferences hides and restores the button",
+      "status": "passed",
+      "durationSeconds": 20.057
+    },
+    {
+      "name": "scenario 1: login by injected session [pi]",
+      "status": "passed",
+      "durationSeconds": 5.446
+    },
+    {
+      "name": "scenario 2: create a program [pi]",
+      "status": "passed",
+      "durationSeconds": 2.075
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [pi]",
+      "status": "passed",
+      "durationSeconds": 10.42
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [pi]",
+      "status": "skipped",
+      "durationSeconds": 0.001
+    },
+    {
+      "name": "scenario 1: login by injected session [staff]",
+      "status": "passed",
+      "durationSeconds": 5.397
+    },
+    {
+      "name": "scenario 2: create a program [staff]",
+      "status": "passed",
+      "durationSeconds": 1.274
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration [staff]",
+      "status": "passed",
+      "durationSeconds": 10.304
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload [staff]",
+      "status": "skipped",
+      "durationSeconds": 0.001
+    },
+    {
+      "name": "scenario 1: login as guest",
+      "status": "passed",
+      "durationSeconds": 6.674
+    },
+    {
+      "name": "scenario 2: create a program",
+      "status": "passed",
+      "durationSeconds": 2.726
+    },
+    {
+      "name": "scenario 3: create an observation with a target and configuration",
+      "status": "passed",
+      "durationSeconds": 10.076
+    },
+    {
+      "name": "scenario 4: edit the subtitle and read it back after a reload",
+      "status": "skipped",
+      "durationSeconds": 0.001
+    },
+    {
+      "name": "keyboard shortcuts drive the tabs, the obs tree, copy and paste, the units and the help",
+      "status": "passed",
+      "durationSeconds": 36.185
+    },
+    {
+      "name": "the landing without a program id creates one for a guest and offers the dialog to a PI",
+      "status": "passed",
+      "durationSeconds": 12.136
+    },
+    {
+      "name": "tile layouts, a minimized tile and the summary table's state persist through Hasura, and Reset Tile Layouts clears them",
+      "status": "flaky",
+      "durationSeconds": 234.909
+    },
+    {
+      "name": "an edit in one Explore shows up in another on the same program without a reload",
+      "status": "passed",
+      "durationSeconds": 29.841
+    },
+    {
+      "name": "observing mode: GMOS North long slit",
+      "status": "passed",
+      "durationSeconds": 18.886
+    },
+    {
+      "name": "observing mode: GMOS South long slit",
+      "status": "passed",
+      "durationSeconds": 19.39
+    },
+    {
+      "name": "observing mode: GMOS North imaging",
+      "status": "passed",
+      "durationSeconds": 23.203
+    },
+    {
+      "name": "observing mode: GMOS South imaging",
+      "status": "passed",
+      "durationSeconds": 18.757
+    },
+    {
+      "name": "observing mode: Flamingos-2 long slit",
+      "status": "passed",
+      "durationSeconds": 19.863
+    },
+    {
+      "name": "observing mode: Flamingos-2 imaging",
+      "status": "passed",
+      "durationSeconds": 16.159
+    },
+    {
+      "name": "observing mode: GNIRS imaging",
+      "status": "passed",
+      "durationSeconds": 18.639
+    },
+    {
+      "name": "observing mode: GNIRS long slit",
+      "status": "passed",
+      "durationSeconds": 18.359
+    },
+    {
+      "name": "observing mode: GNIRS IFU",
+      "status": "passed",
+      "durationSeconds": 17.456
+    },
+    {
+      "name": "observing mode: IGRINS-2 long slit",
+      "status": "passed",
+      "durationSeconds": 17.764
+    },
+    {
+      "name": "observing mode: GHOST IFU",
+      "status": "passed",
+      "durationSeconds": 24.307
+    },
+    {
+      "name": "observing mode: visitor",
+      "status": "passed",
+      "durationSeconds": 9.207
+    },
+    {
+      "name": "observing mode: Keck exchange",
+      "status": "passed",
+      "durationSeconds": 8.644
+    },
+    {
+      "name": "observing mode: Subaru exchange",
+      "status": "passed",
+      "durationSeconds": 8.647
+    },
+    {
+      "name": "scenario 1: staff opens a call for proposals",
+      "status": "passed",
+      "durationSeconds": 0.111
+    },
+    {
+      "name": "scenario 2: the PI's proposal is written against that call",
+      "status": "passed",
+      "durationSeconds": 3.357
+    },
+    {
+      "name": "scenario 3: Explore shows the proposal, and refuses to submit it incomplete",
+      "status": "passed",
+      "durationSeconds": 6.693
+    },
+    {
+      "name": "scenario 4: the ODB refuses to submit without attachments, then submits and retracts once both are uploaded",
+      "status": "passed",
+      "durationSeconds": 1.02
+    },
+    {
+      "name": "scenario 5: Explore's own Submit and Retract buttons drive the same lifecycle",
+      "status": "passed",
+      "durationSeconds": 11.718
+    },
+    {
+      "name": "a user holding two roles switches from PI to staff in the top bar",
+      "status": "passed",
+      "durationSeconds": 14.074
+    },
+    {
+      "name": "duplicating an executed observation asks which steps to copy, and each choice clones accordingly",
+      "status": "passed",
+      "durationSeconds": 22.509
+    },
+    {
+      "name": "a fabricated standard PI drives Explore via cookie injection",
+      "status": "passed",
+      "durationSeconds": 5.995
+    },
+    {
+      "name": "the Program tab's time tables show the award, the prepared estimate and the used time the ODB holds",
+      "status": "passed",
+      "durationSeconds": 12.612
+    },
+    {
+      "name": "undo and redo move the ODB copy of a constraint and of a target name",
+      "status": "passed",
+      "durationSeconds": 15.244
+    }
+  ],
+  "metrics": {
+    "readP95Ms": 119.008,
+    "writeP95Ms": 105.054,
+    "p95Ms": 110.558,
+    "errorRate": 0,
+    "iterations": 1,
+    "httpReqs": 110
+  },
+  "runUrl": "https://github.com/cquiroz/gpp-tests/actions/runs/44566407207"
+}
