@@ -34,10 +34,10 @@ tree (add obs, add daytime cal), target add (button, empty sidereal), configurat
 picker (mode, instrument, AO filter, rows, accept, ITC progress), visitor editor (six
 fields), sequence tile (planned, customized, step), sequence-copy dialog (five), daytime
 cal instrument, proposal (title, category, band3, partners, errors, submit, retract),
-user preferences (guide button), and `explore-mode-summary`. Everything else is text,
-role, or CSS class. Pending upstream on lucuma-apps `obs-lifecycle-testids`: the obs
-badge (`explore-obs-badge` with `data-obs-id`, and its duplicate, delete and state
-controls) and the Scheduling tile's add button, window rows and their delete button.
+user preferences (guide button), `explore-mode-summary`, the obs badge
+(`explore-obs-badge` with `data-obs-id`, and its duplicate, delete and state controls)
+and the Scheduling tile's add button, window rows and their delete button (the last two
+groups from lucuma-apps #1986). Everything else is text, role, or CSS class.
 
 ## 1. Shell, session and navigation
 
@@ -86,7 +86,7 @@ controls) and the Scheduling tile's add button, window rows and their delete but
 | Feature | What it does | Layer | Today | Done | Needs |
 |---|---|---|---|---|---|
 | Create observation | "Obs" button; also "Grp" and "Add a new Daytime Calibration" (`explore-obs-tree-add-daytime-cal`) | both | covered (obs only) | 2 | ids for Grp (daytime cal has one) |
-| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | covered (`observation-lifecycle.spec.ts`: the badge button, no dialog, the clone read back; the `p` shortcut in `keyboard-shortcuts.spec.ts`) | 3 | — (badge ids pending upstream merge; local bundle until then) |
+| Clone (Duplicate) | Per-badge duplicate button copies the observation | both | covered (`observation-lifecycle.spec.ts`: the badge button, no dialog, the clone read back; the `p` shortcut in `keyboard-shortcuts.spec.ts`) | 3 | — |
 | Delete and undelete | Badge delete; multi-select delete with the "Observations delete" confirm dialog; undo restores | both | partial (`observation-lifecycle.spec.ts`: badge delete through the confirm dialog, the ODB read back; multi-select and undo-restore not yet) | 2 | — |
 | Subtitle edit | Badge "Add description" / pencil / inline input | both | written, skipped (journey scenario 4) | 1 | ids (ticket 032) |
 | Science band | Popup menu on the badge sets the band from the program's allocations | both | none | 1 | ids; needs a time award first (staff) |
@@ -150,7 +150,7 @@ controls) and the Scheduling tile's add button, window rows and their delete but
 |---|---|---|---|---|---|
 | Constraint set | Image quality, cloud extinction, water vapor, sky background, elevation range (air mass / hour angle), "likelihood of selected conditions" | both | covered (`constraints-scheduling.spec.ts`: the four conditions, air mass and hour angle limits, read back through `observationScheduling`; the likelihood display not asserted) | 3 | — (the fields' element ids were enough) |
 | Constraints tab | Shared constraint groups across selected observations | both | none | 1 | ids |
-| Timing windows | Inclusion/exclusion windows, forever/through, repeat period and count, delete | both | partial (`constraints-scheduling.spec.ts`: add, exclude, a duration, repeat with a count, delete; the "through" date picker not yet) | 2 | — (add, row and delete ids pending upstream) |
+| Timing windows | Inclusion/exclusion windows, forever/through, repeat period and count, delete | both | partial (`constraints-scheduling.spec.ts`: add, exclude, a duration, repeat with a count, delete; the "through" date picker not yet) | 2 | — |
 | Scheduling mode | Scheduling tab per observation set | both | none | 1 | ids |
 | Scheduling groups | Shared windows across selected observations | both | none | 1 | ids |
 
@@ -187,9 +187,8 @@ Ranked by value to the regression claim over cost, given what the stack and the 
 allow today:
 
 1. **Observation lifecycle through the UI** — clone, delete and inactivate/reactivate
-   landed in `observation-lifecycle.spec.ts` (badge ids on lucuma-apps
-   `obs-lifecycle-testids`, pending merge). Left: undelete through undo, multi-select
-   delete, science band.
+   landed in `observation-lifecycle.spec.ts` (badge ids from lucuma-apps #1986). Left:
+   undelete through undo, multi-select delete, science band.
 2. **Constraint set and timing windows** — landed in `constraints-scheduling.spec.ts`.
    Left: the "through" end date, and the shared Constraints and Scheduling tabs.
 3. **Groups** — create, type, ordered, delays; then drag-and-drop separately.

@@ -426,7 +426,7 @@ export const timeAccountingTable = (page: Page): Locator =>
 export const tableRow = (table: Locator, label: RegExp): Locator =>
   table.locator("tr").filter({ hasText: label });
 
-/* ── Observation lifecycle (obs badge ids, lucuma-apps `obs-lifecycle-testids`) ─────── */
+/* ── Observation lifecycle (obs badge ids) ─────────────────────────────────────────── */
 
 /**
  * The obs tree card of one observation, matched on the id the card carries, so the

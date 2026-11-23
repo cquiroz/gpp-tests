@@ -17,9 +17,6 @@ import { StandardSession, loadStandardUser } from "../support/standard-users.js"
  * deactivate and reactivate through the workflow state dropdown, and delete through its
  * confirmation. Every step is read back from the ODB, so a card that looks right over a
  * mutation that failed still fails the test. Creation is covered by the journey.
- *
- * Needs the obs badge ids, which Explore ships from lucuma-apps `obs-lifecycle-testids` on;
- * until that is deployed, run it against a local bundle (`EXPLORE_BUNDLE_DIR`, README).
  */
 
 const pi = loadStandardUser("TEST_PI");
