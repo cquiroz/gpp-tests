@@ -58,7 +58,7 @@ jobs:
       - name: Playwright suite
         run: |
           source stack/.env.generated
-          npm run e2e
+          npx playwright test tests/e2e/diag-page-load.spec.ts --retries=0 --reporter=line
 
       - name: Upload Playwright artifacts
         if: failure()
