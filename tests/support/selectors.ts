@@ -425,3 +425,67 @@ export const timeAccountingTable = (page: Page): Locator =>
   page.locator(".program-details-tile .program-tab-table").nth(1);
 export const tableRow = (table: Locator, label: RegExp): Locator =>
   table.locator("tr").filter({ hasText: label });
+
+/* ── Observation lifecycle (obs badge ids) ─────────────────────────────────────────── */
+
+/**
+ * The obs tree card of one observation, matched on the id the card carries, so the
+ * assertion is "this exact observation is listed".
+ */
+export const obsBadgeById = (page: Page, observationId: string): Locator =>
+  page
+    .getByTestId("explore-obs-badge")
+    .and(page.locator(`[data-obs-id="${observationId}"]`));
+
+/** Delete opens a confirmation; Duplicate clones at once unless the sequence is materialized. */
+export const obsBadgeDelete = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-delete");
+export const obsBadgeDuplicate = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-duplicate");
+
+/**
+ * The workflow state dropdown. The id is on its wrapper span; the label shows the state's
+ * name ("Defined", "Inactive"), and only valid transitions are offered as options.
+ */
+export const obsBadgeState = (badge: Locator): Locator =>
+  badge.getByTestId("explore-obs-badge-state");
+export const obsBadgeStateLabel = (badge: Locator): Locator =>
+  obsBadgeState(badge).locator(".p-dropdown-label");
+
+/** The accept button of the "Observations delete" confirmation (`ObsTree.scala`). */
+export const confirmDeleteButton = (page: Page): Locator =>
+  page.getByRole("button", { name: "Yes, delete" });
+
+/**
+ * An option in the open dropdown overlay only. The state dropdown also renders a hidden
+ * native `<select>` whose current option has the same name, which {@link dropdownOption}
+ * would match too.
+ */
+export const dropdownPanelOption = (page: Page, label: string): Locator =>
+  page.locator(".p-dropdown-panel").getByRole("option", { name: label, exact: true });
+
+/* ── Constraints and scheduling windows ───────────────────────────────────────────────
+ *
+ * The Constraints tile's fields carry plain element ids (`ConstraintsPanel.scala`): the
+ * four condition dropdowns (see {@link constraintDropdown}), `ertype` for the elevation
+ * range type, and `minam`/`maxam` or `minha`/`maxha` for its limits. The Scheduling tile
+ * (`SchedulingWindowsTile.scala`) has ids on its editor fields too; the add button, the
+ * rows and their delete buttons got test ids with the obs badge ones.
+ */
+
+/** A text field by its element id; FormInputTextView puts the id on the `<input>`. */
+export const formInput = (page: Page, id: string): Locator => page.locator(`input#${id}`);
+
+/** The label of a radio button or checkbox, which is where a click lands reliably. */
+export const labelFor = (page: Page, id: string): Locator => page.locator(`label[for="${id}"]`);
+
+export const addTimingWindowButton = (page: Page): Locator =>
+  page.getByTestId("explore-scheduling-add-window");
+export const timingWindowRows = (page: Page): Locator =>
+  page.getByTestId("explore-scheduling-window-row");
+export const timingWindowDelete = (row: Locator): Locator =>
+  row.getByTestId("explore-scheduling-window-delete");
+
+/** A PrimeReact checkbox's `<input>`; its id sits on the wrapper, so a `label[for]` click misses. */
+export const checkboxInput = (page: Page, id: string): Locator =>
+  page.locator(`#${id} input[type="checkbox"]`);
